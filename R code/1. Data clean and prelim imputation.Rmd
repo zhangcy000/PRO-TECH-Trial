@@ -1,0 +1,275 @@
+---
+title: "Data Clean"
+author: "Congyu Zhang"
+output: html_document
+---
+# 1. Load packages and set up environment
+
+```{r setup, include=FALSE, echo=FALSE}
+rm(list=ls())
+
+library(dplyr)
+library(haven)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(ggpubr)
+library(ggpattern)
+library(stringr)
+library(here)
+
+```
+
+# 2. Import the raw data 
+
+```{r rawdata, echo=FALSE}
+
+# PROCTCAE data
+pro <- read_sas(here("data","SAS Data", "pro_responses.sas7bdat"))
+length(unique(pro$PTID))
+# Patient clinical and demographic data
+pt_clinical <- read_sas(here("data","SAS Data","pt_clinical.sas7bdat"))
+length(unique(pt_clinical$PTID))
+```
+
+# 3.1. Data pre-processing
+
+## 3.1.1 Endpoints (reduction,death,er,hospitalization and discontinuation) 
+get the time of each visit of each endpoint; No time for treatment discontinuation
+         
+```{r endpoints, echo=FALSE}
+
+# Endpoint analysis (time to event)
+endpoint <- pt_clinical %>%
+  mutate(C12_dose_reduction_day1  =  as.numeric(C12_dose_reduction1_date - consent_dt),
+         C12_dose_reduction_day2  =  as.numeric(C12_dose_reduction2_date - consent_dt),
+         C12_dose_reduction_day3  =  as.numeric(C12_dose_reduction3_date - consent_dt),
+         C12_dose_reduction_day4  =  as.numeric(C12_dose_reduction4_date - consent_dt),
+         C12_dose_reduction_day5  =  as.numeric(C12_dose_reduction5_date - consent_dt),
+         C12_dose_reduction_day6  =  as.numeric(C12_dose_reduction6_date - consent_dt),
+         C12_dose_reduction_day7  =  as.numeric(C12_dose_reduction7_date - consent_dt),
+         C12_dose_reduction_day8  =  as.numeric(C12_dose_reduction8_date - consent_dt),
+         C12_dose_reduction_day9  =  as.numeric(C12_dose_reduction9_date - consent_dt),
+         C12_dose_reduction_day10  =  as.numeric(C12_dose_reduction10_date - consent_dt)) %>%
+  mutate(C9_death_date  =  as.numeric(C9_death_date - consent_dt)) %>%
+  mutate(C12_er_day1  =  as.numeric(C12_er_visit1_date - consent_dt),
+         C12_er_day2  =  as.numeric(C12_er_visit2_date - consent_dt),
+         C12_er_day3  =  as.numeric(C12_er_visit3_date - consent_dt),
+         C12_er_day4  =  as.numeric(C12_er_visit4_date - consent_dt),
+         C12_er_day5  =  as.numeric(C12_er_visit5_date - consent_dt),
+         C12_er_day6  =  as.numeric(C12_er_visit6_date - consent_dt),
+         C12_er_day7  =  as.numeric(C12_er_visit7_date - consent_dt),
+         C12_er_day8  =  as.numeric(C12_er_visit8_date - consent_dt),
+         C12_er_day9  =  as.numeric(C12_er_visit9_date - consent_dt),
+         C12_er_day10  =  as.numeric(C12_er_visit10_date - consent_dt),
+         C12_er_day11  =  as.numeric(C12_er_visit11_date - consent_dt),
+         C12_er_day12  =  as.numeric(C12_er_visit12_date - consent_dt),
+         C12_er_day13  =  as.numeric(C12_er_visit13_date - consent_dt),
+         C12_er_day14  =  as.numeric(C12_er_visit14_date - consent_dt),
+         C12_er_day15  =  as.numeric(C12_er_visit15_date - consent_dt),
+         C12_er_day16  =  as.numeric(C12_er_visit16_date - consent_dt),
+         C12_er_day17  =  as.numeric(C12_er_visit17_date - consent_dt),
+         C12_er_day18  =  as.numeric(C12_er_visit18_date - consent_dt),
+         C12_er_day19  =  as.numeric(C12_er_visit19_date - consent_dt),
+         C12_er_day20  =  as.numeric(C12_er_visit20_date - consent_dt)) %>%
+  mutate(C12_hospital_day1  =  as.numeric(C12_hospital_admission1_date - consent_dt),
+         C12_hospital_day2  =  as.numeric(C12_hospital_admission2_date - consent_dt),
+         C12_hospital_day3  =  as.numeric(C12_hospital_admission3_date - consent_dt),
+         C12_hospital_day4  =  as.numeric(C12_hospital_admission4_date - consent_dt),
+         C12_hospital_day5  =  as.numeric(C12_hospital_admission5_date - consent_dt),
+         C12_hospital_day6  =  as.numeric(C12_hospital_admission6_date - consent_dt),
+         C12_hospital_day7  =  as.numeric(C12_hospital_admission7_date - consent_dt),
+         C12_hospital_day8  =  as.numeric(C12_hospital_admission8_date - consent_dt),
+         C12_hospital_day9  =  as.numeric(C12_hospital_admission9_date - consent_dt),
+         C12_hospital_day10  =  as.numeric(C12_hospital_admission10_date - consent_dt)) %>%
+  select(PTID,C12_dose_reduction,starts_with("C12_dose_reduction_day"),starts_with("C12_er_day"),
+         starts_with("C12_hospital_day"),C9_death,C9_death_date,C12_discontinuing_overall,C12_er,C12_hospital) 
+
+# export the data frame for separate analysis
+# write.csv(endpoint,file = "endpoint.csv",row.names = FALSE)
+
+```
+
+## 3.1.2 Demographics
+extract the patient demographics from the clinical data set
+
+```{r demographic, include=FALSE, echo=FALSE}
+
+test <- pt_clinical %>%
+      select(C7_ECOG_v2,C7_ECOG)
+  
+demo <- pt_clinical %>%
+  # obtain all IV and Oral treatment information of each patient (in total 6 treatment for IV and PO)
+  mutate(C7_intravenous_all_1 =  do.call(paste0, across(c("C7_intravenous_1", starts_with("C7_intravenous_1_v")))),
+         C7_intravenous_all_2 =  do.call(paste0, across(c("C7_intravenous_2", starts_with("C7_intravenous_2_v")))),
+         C7_intravenous_all_3 =  do.call(paste0, across(c("C7_intravenous_3", starts_with("C7_intravenous_3_v")))),
+         C7_intravenous_all_4 =  do.call(paste0, across(c("C7_intravenous_4", starts_with("C7_intravenous_4_v")))),
+         C7_intravenous_all_5 =  do.call(paste0, across(c("C7_intravenous_5", starts_with("C7_intravenous_5_v")))),
+         C7_intravenous_all_6 =  do.call(paste0, across(c("C7_intravenous_6", starts_with("C7_intravenous_6_v")))),
+         C7_oral_all_1 =  do.call(paste0, across(c("C7_oral_1", starts_with("C7_oral_1_v")))),
+         C7_oral_all_2 =  do.call(paste0, across(c("C7_oral_2", starts_with("C7_oral_2_v")))),
+         C7_oral_all_3 =  do.call(paste0, across(c("C7_oral_3", starts_with("C7_oral_3_v")))),
+         C7_oral_all_4 =  do.call(paste0, across(c("C7_oral_4", starts_with("C7_oral_4_v")))),
+         C7_oral_all_5 =  do.call(paste0, across(c("C7_oral_5", starts_with("C7_oral_5_v")))),
+         C7_oral_all_6 =  do.call(paste0, across(c("C7_oral_6", starts_with("C7_oral_6_v"))))) %>%
+  # ECOG was recorded in either C7_ECOG_V2 or C7_ECOG
+  mutate(C7_ECOG_all = across(c("C7_ECOG_v2", "C7_ECOG"), ~ ifelse(is.na(.x), "", .x)) %>%
+  as.data.frame() %>%
+  do.call(paste0, .)) %>% 
+  mutate(C9_death_date  =  as.numeric(C9_death_date - consent_dt)) %>%
+  select(PTID, consent_dt,Age,Gender,Ethnicity,race_overall,C7_height_overall, 
+         cancer,C12_dose_reduction,C7_intravenous_treatment, C7_oral_treatment,
+         starts_with("C7_intravenous_all_"),starts_with("C7_oral_all_"),
+         C7_ECOG_all,C9_death,C9_death_date,C12_discontinuing_overall,C12_er,C12_hospital) 
+
+```
+
+
+# 4. Data combination and imputation
+combine the demographics with PRO reported patients and prelim imputation process
+FormStatusDay: Days between activity start date and activity form status change date
+
+## 4.1 data combination
+```{r combination, include=FALSE, echo=FALSE}
+
+# extract the symptom score from the pro dataset
+pro2 <- pro %>% 
+      select(PTID, FormStatusDay, Activity, Depression,appetite_overall, starts_with("PROCTCAE_"))
+# combine the PROs with demographics
+dat2 <- merge(demo, pro2, by='PTID')
+```
+
+## 4.2 data imputation
+```{r, include=FALSE, echo=FALSE}
+#--------------------------------------
+# 1. treatment combination
+#--------------------------------------
+# IV treatment
+dat2 <- dat2 %>%
+  rowwise() %>%
+  mutate(intravenous_merged = 
+         str_squish(str_c(na.omit(c_across(starts_with("C7_intravenous_all_"))), collapse = " ")),
+         intravenous_merged = if_else(intravenous_merged == "" | is.na(intravenous_merged),
+         "None",intravenous_merged)
+  ) %>%
+  select(-matches("^C7_intravenous_all_")) %>%
+  ungroup()
+
+# Oral treatment
+dat2 <- dat2 %>%
+  rowwise() %>%
+  mutate(oral_merged = 
+          str_squish(str_c(na.omit(c_across(starts_with("C7_oral_all_"))), collapse = " ")),
+         oral_merged = if_else(oral_merged == "" | is.na(oral_merged),
+                              "None",oral_merged)
+  ) %>%
+  select(-matches("^C7_oral_all_")) %>%
+  ungroup()
+
+#--------------------------------------
+# 2. Check duplicates columns of PROs (remove the duplicate rows--keep the rows with less missing values)
+#--------------------------------------
+check_col <- c("Activity", "Depression", "PROCTCAE_Pain_f", "PROCTCAE_Pain_s", "PROCTCAE_Pain_i",
+                "PROCTCAE_Nausea_f", "PROCTCAE_Nausea_s", "PROCTCAE_Vomit_f", "PROCTCAE_Diarr_f",
+                "PROCTCAE_Constip_s", "PROCTCAE_Dyspnea_s", "PROCTCAE_Dyspnea_i", "PROCTCAE_Insomnia_s")
+
+dat2_clean <- dat2 %>%
+        rowwise() %>%
+        mutate(count = sum(is.na(c_across(all_of(check_col))))) %>% 
+        group_by(PTID, FormStatusDay) %>%
+        arrange(count) %>%
+        slice(1) %>%
+        select(-count) %>%
+        ungroup()
+
+# check duplicate again - no duplicate found
+any(duplicated(dat2_clean)) 
+
+#--------------------------------------
+# 3. Classify treatment into subgroups (IV + PO)
+#--------------------------------------
+dat3 <- dat2_clean %>%
+    mutate(
+    REGIMEN_IV = case_when(
+# Chemo + Immuno + Targeted
+      str_detect(intravenous_merged,regex("carboplatin|etoposide|pemetrexed|docetaxel|paclitaxel|cisplatin|gemcitabine|topotecan|5FU|oxaliplatin|cyclophosphamide|doxorubicin|irinotecan|fluorouracil|cabazitaxel|trabectedin|bendamustine|eribulin|vinorelbine|temsirolimus|decitabine|fludarabine", ignore_case = TRUE)) &
+        
+      str_detect(intravenous_merged, regex("pembrolizumab|nivolumab|atezolizumab|ipilimumab", ignore_case = TRUE)) &
+        
+      str_detect(intravenous_merged,regex("bevacizumab|ramucirumab|trastuzumab|cetuximab|pertuzumab|daratumumab|panitumumab|olaratumab|elotuzumab|rituximab|blinatumamab|obinutuzumab", ignore_case = TRUE)) ~ "three combine",
+      
+# Chemo + Immunotherapy
+      str_detect(intravenous_merged,regex("carboplatin|etoposide|pemetrexed|docetaxel|paclitaxel|cisplatin|gemcitabine|topotecan|5FU|oxaliplatin|cyclophosphamide|doxorubicin|irinotecan|fluorouracil|cabazitaxel|trabectedin|bendamustine|eribulin|vinorelbine|temsirolimus|decitabine|fludarabine", ignore_case = TRUE)) &
+      
+      str_detect(intravenous_merged, regex("pembrolizumab|nivolumab|atezolizumab|ipilimumab", 
+      ignore_case = TRUE)) ~"Chemo_Immunotherapy",
+      
+# Chemo + Targeted
+      str_detect(intravenous_merged,regex("carboplatin|etoposide|pemetrexed|docetaxel|paclitaxel|cisplatin|gemcitabine|topotecan|5FU|oxaliplatin|cyclophosphamide|doxorubicin|irinotecan|fluorouracil|cabazitaxel|trabectedin|bendamustine|eribulin|vinorelbine|temsirolimus|decitabine|fludarabine", ignore_case = TRUE)) &
+      
+      str_detect(intravenous_merged,regex("bevacizumab|ramucirumab|trastuzumab|cetuximab|pertuzumab|daratumumab|panitumumab|olaratumab|elotuzumab|rituximab|blinatumamab|obinutuzumab", ignore_case = TRUE)) ~ "Chemo_Targeted",
+      
+# Immuno + Targeted
+      str_detect(intravenous_merged, regex("pembrolizumab|nivolumab|atezolizumab|ipilimumab", ignore_case = TRUE)) &
+      str_detect(intravenous_merged,regex("bevacizumab|ramucirumab|trastuzumab|cetuximab|pertuzumab|daratumumab|panitumumab|olaratumab|elotuzumab|rituximab|blinatumamab|obinutuzumab", ignore_case = TRUE)) ~ "Immuno_Targeted",
+      
+# Immunotherapy only
+      str_detect(intravenous_merged, regex("pembrolizumab|nivolumab|atezolizumab|ipilimumab", ignore_case = TRUE))~ "Immunotherapy only",
+      
+# Chemotherapy only
+      str_detect(intravenous_merged,regex("carboplatin|etoposide|pemetrexed|docetaxel|paclitaxel|cisplatin|gemcitabine|topotecan|5FU|oxaliplatin|cyclophosphamide|doxorubicin|irinotecan|fluorouracil|cabazitaxel|trabectedin|bendamustine|eribulin|vinorelbine|temsirolimus|decitabine|fludarabine", ignore_case = TRUE)) ~ "Chemotherapy only",
+      
+#Targeted only
+      str_detect(intravenous_merged,regex("bevacizumab|ramucirumab|trastuzumab|cetuximab|pertuzumab|daratumumab|panitumumab|olaratumab|elotuzumab|rituximab|blinatumamab|obinutuzumab", ignore_case = TRUE)) ~ "Targeted only",
+      
+      # None or unclassified
+      TRUE ~ "None or Unclassified"
+    )
+  )
+
+# Classify Oral treatment
+dat3 <- dat3 %>%
+mutate(REGIMEN_PO = case_when(
+# TKI
+str_detect(oral_merged, regex("ceritinib|crizotinib|alectinib|afatinib|osimertinib|erlotinib|sunitinib|sorafenib|pazopanib|axitinib|lenvatinib|caboxantinib|regorafenib|imatinib", ignore_case = TRUE))  ~ "TKI Treatment",
+  
+# None or unclassified
+      TRUE ~ "None or Unclassified"
+    )
+  )
+
+```
+
+# 5. Convert the data set to population model format
+
+```{r, include=FALSE, echo=FALSE}
+final_df <- dat3 %>%
+    # remove the treatment binary variables and merged treatment variables
+    select(-oral_merged,-intravenous_merged,-C7_intravenous_treatment,-C7_oral_treatment) %>%
+    # change the full PROCTCAE names to numbers (start with 004 since three other symptoms will be coded 001-003)
+    rename_with(~ paste0("PROCTCAE_", sprintf("%03d", seq(from = 4, length.out = length(.)))), 
+                .cols = starts_with("PROCTCAE_")) %>%  
+    rename(race = race_overall, height = C7_height_overall, cancertype = cancer,
+             ecog = C7_ECOG_all,time = FormStatusDay,death = C9_death,death.date = C9_death_date,
+             discontinue = C12_discontinuing_overall, er = C12_er, hospital = C12_hospital,
+             PROCTCAE_001 = Activity, PROCTCAE_002 = Depression,PROCTCAE_003 = appetite_overall) %>%
+    rename_with(toupper) %>%
+    group_by(PTID) %>%
+    mutate(FIRSTTIME = first(TIME)) %>%
+    ungroup() %>%
+    mutate(TAFR = TIME - FIRSTTIME) %>%
+    pivot_longer(
+      cols = starts_with("PROCTCAE_"),
+      names_to = "PROCTCAE",
+      values_to = "DV"
+    ) %>%
+    mutate(MDV = as.numeric(is.na(DV))) %>%
+    group_by(PTID,TIME) %>%
+    mutate(VAR = row_number()) %>%
+    ungroup() %>%
+    # rearrange the columns
+    select(PTID,CONSENT_DT,PROCTCAE,VAR,TIME,TAFR,DV,MDV,everything())
+
+#write.csv(final_df,"fulldata_IRT.csv",row.names = FALSE)
+
+```

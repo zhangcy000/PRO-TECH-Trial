@@ -1,0 +1,349 @@
+---
+title: "Data exploratory - Generate the ML datasets including covariates and individual paramters"
+author: "Congyu Zhang"
+output: html_document
+---
+# 1. Load packages and set up environment
+
+```{r setup, include=FALSE, echo=FALSE}
+rm(list=ls())
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(car) 
+library(pROC) 
+library(ResourceSelection)
+library(ggplot2)
+library(grid)
+
+```
+
+# 2. Import the raw data 
+
+```{r, echo=FALSE}
+train <- read.csv(here("data","PROtotal_data","LOCF_train.csv")) %>%
+        group_by(PTID) %>%
+        distinct(PTID,.keep_all = TRUE) %>%
+        select(PTID,ER,HOSPITAL,DISCONTINUE,C12_DOSE_REDUCTION,DEATH,SURVIVAL_TIME,
+               AGE,ETHNICITY,RACE,HEIGHT,CANCERTYPE,IV,PO,SEX,ECOG,SCORE) %>%
+        rename(REDUCTION = C12_DOSE_REDUCTION) %>%
+        ungroup()
+
+validation <- read.csv(here("data","PROtotal_data","LOCF_test.csv")) %>%
+        group_by(PTID) %>%
+        distinct(PTID,.keep_all = TRUE) %>%
+        select(PTID,SCORE,ER,HOSPITAL,DISCONTINUE,C12_DOSE_REDUCTION,DEATH,SURVIVAL_TIME,
+               AGE,ETHNICITY,RACE,HEIGHT,CANCERTYPE,IV,PO,SEX,ECOG,SCORE) %>%
+        rename(REDUCTION = C12_DOSE_REDUCTION) %>%
+        ungroup()
+
+# Train dataset parameters
+train_prm <- read.csv(here("data","PROtotal_data","ML for CS","train.txt")) %>% 
+          select(id,contains("SAEM")) %>% 
+          rename_with(~gsub("_SAEM$", "", .), contains("SAEM")) %>%
+          rename(PTID = id) %>%
+          select(-tau,-gamma0,-gamma1)
+
+# Validation 30 days dataset parameters
+vali_prm_30 <- read.csv(here("data","PROtotal_data","ML for CS","vali_30.txt")) %>% 
+          select(id,contains("SAEM")) %>% 
+          rename_with(~gsub("_SAEM$", "", .), contains("SAEM")) %>%
+          rename(PTID = id)%>%
+          select(-tau,-gamma0,-gamma1)
+
+# Validation 60 days dataset parameters
+vali_prm_60 <- read.csv(here("data","PROtotal_data","ML for CS","vali_60.txt")) %>% 
+          select(id,contains("SAEM")) %>% 
+          rename_with(~gsub("_SAEM$", "", .), contains("SAEM")) %>%
+          rename(PTID = id) %>%
+          select(-tau,-gamma0,-gamma1)
+
+# Validation 90 days dataset parameters
+vali_prm_90 <- read.csv(here("data","PROtotal_data","ML for CS","vali_90.txt")) %>% 
+          select(id,contains("SAEM")) %>% 
+          rename_with(~gsub("_SAEM$", "", .), contains("SAEM")) %>%
+          rename(PTID = id) %>%
+          select(-tau,-gamma0,-gamma1)
+
+# Validation 180 days dataset parameters
+vali_prm_180 <- read.csv(here("data","PROtotal_data","ML for CS","vali_180.txt")) %>% 
+          select(id,contains("SAEM")) %>% 
+          rename_with(~gsub("_SAEM$", "", .), contains("SAEM")) %>%
+          rename(PTID = id) %>%
+          select(-tau,-gamma0,-gamma1)
+
+# Validation fulll dataset parameters
+vali_prm_full <- read.csv(here("data","PROtotal_data","ML for CS","vali_full.txt")) %>% 
+          select(id,contains("SAEM")) %>% 
+          rename_with(~gsub("_SAEM$", "", .), contains("SAEM")) %>%
+          rename(PTID = id) %>%
+          select(-tau,-gamma0,-gamma1)
+```
+
+# 3.1 Generate the datasets
+
+## 3.1.1 combine demographics with individual parameters
+
+```{r, echo=FALSE}
+train_c <- train %>%
+        left_join(train_prm,by = "PTID")
+
+vali_c_30 <- validation %>%
+        left_join(vali_prm_30,by = "PTID")
+
+vali_c_60 <- validation %>%
+        left_join(vali_prm_60,by = "PTID")
+
+vali_c_90 <- validation %>%
+        left_join(vali_prm_90,by = "PTID")
+
+vali_c_180 <- validation %>%
+        left_join(vali_prm_180,by = "PTID")
+
+vali_c_full <- validation %>%
+        left_join(vali_prm_full,by = "PTID")
+```
+
+## 3.1.2 Time to Event data separation
+
+```{r, include=FALSE, echo=FALSE}
+#--------------------------------------
+# Training Cohort
+#--------------------------------------
+train_death <- train_c %>%
+          select(-DISCONTINUE,-ER,-HOSPITAL,-REDUCTION)
+
+#--------------------------------------
+# 30 day validation
+#--------------------------------------
+vali_30_death <- vali_c_30 %>%
+          select(-DISCONTINUE,-ER,-HOSPITAL,-REDUCTION)
+
+#--------------------------------------
+# 60 day validation
+#--------------------------------------
+vali_60_death <- vali_c_60 %>%
+          select(-DISCONTINUE,-ER,-HOSPITAL,-REDUCTION)
+
+#--------------------------------------
+# 90 day validation data
+#--------------------------------------
+vali_90_death <- vali_c_90 %>%
+          select(-DISCONTINUE,-ER,-HOSPITAL,-REDUCTION)
+
+#--------------------------------------
+# 180 day validation
+#--------------------------------------
+vali_180_death <-vali_c_180 %>%
+          select(-ER,-REDUCTION,-HOSPITAL,-DISCONTINUE)
+
+#--------------------------------------
+# full validation data
+#--------------------------------------
+vali_full_death <-vali_c_full %>%
+          select(-ER,-REDUCTION,-HOSPITAL,-DISCONTINUE)
+
+```
+
+## 3.1.3 Export the datasets for PRO_total model 
+
+```{r, include=FALSE, echo=FALSE}
+
+write.csv(train_death,"train_OS_total.csv",row.names = FALSE)
+write.csv(vali_30_death,"vali_30_OS_total.csv",row.names = FALSE)
+write.csv(vali_60_death,"vali_60_OS_total.csv",row.names = FALSE)
+write.csv(vali_90_death,"vali_90_OS_total.csv",row.names = FALSE)
+write.csv(vali_180_death,"vali_180_OS_total.csv",row.names = FALSE)
+write.csv(vali_full_death,"vali_full_OS_total.csv",row.names = FALSE)
+
+```
+
+# 4. Generate the heatmap of univariable analysis
+
+## 4.1 Parameter normalization 
+
+```{r, echo=FALSE}
+# normalized the parameters based on distribution
+vars <- c("BASEP", "SLP", "Emax","Kd")
+vars_base <- c("BASEP", "SLP", "Emax") #normal distribution
+vars_log <- c("Kd") #lognormal distribution
+
+train_ml <- train_c
+
+train_ml[vars_base] <- scale(train_ml[vars_base])
+train_ml[vars_log] <- scale(log(train_ml[vars_log]))
+
+```
+
+
+## 4.2 Univaraible logistic regression
+
+### 4.2.1 Dose Discontinuation
+
+```{r, echo=FALSE}
+train_logis_dis <- data.frame()
+# check single variable p-value check
+for(prm in vars){
+  f <- as.formula(paste("DISCONTINUE ~", prm))
+  m <- glm(f, data=train_ml, family=binomial)
+  train_logis_dis <- rbind(train_logis_dis,
+                   data.frame(
+                     variable = prm,
+                     P_value = coef(summary(m))[2,4],
+                     OR = exp(coef(m))[2],
+                     OR_low = exp(confint(m))[2,1],
+                     OR_high = exp(confint(m))[2,2]
+                   ))}
+train_logis_dis
+
+```
+
+### 4.2.2 ER Visit
+```{r, echo=FALSE}
+train_logis_er <- data.frame()
+# check single variable p-value check
+for(prm in vars){
+  f <- as.formula(paste("ER ~", prm))
+  m <- glm(f, data=train_ml, family=binomial)
+  train_logis_er <- rbind(train_logis_er,
+                           data.frame(
+                             variable = prm,
+                             P_value = coef(summary(m))[2,4],
+                             OR = exp(coef(m))[2],
+                             OR_low = exp(confint(m))[2,1],
+                             OR_high = exp(confint(m))[2,2]
+                           ))}
+train_logis_er
+
+```
+
+### 4.2.3 Hospitalization
+```{r, echo=FALSE}
+train_logis_hos <- data.frame()
+# check single variable p-value check
+for(prm in vars){
+  f <- as.formula(paste("HOSPITAL ~", prm))
+  m <- glm(f, data=train_ml, family=binomial)
+  train_logis_hos <- rbind(train_logis_hos,
+                           data.frame(
+                             variable = prm,
+                             P_value = coef(summary(m))[2,4],
+                             OR = exp(coef(m))[2],
+                             OR_low = exp(confint(m))[2,1],
+                             OR_high = exp(confint(m))[2,2]
+                           ))}
+train_logis_hos
+
+```
+
+### 4.2.4 Dose Reduction
+```{r, echo=FALSE}
+train_logis_red <- data.frame()
+# check single variable p-value check
+for(prm in vars){
+  f <- as.formula(paste("REDUCTION ~", prm))
+  m <- glm(f, data=train_ml, family=binomial)
+  train_logis_red <- rbind(train_logis_red,
+                           data.frame(
+                             variable = prm,
+                             P_value = coef(summary(m))[2,4],
+                             OR = exp(coef(m))[2],
+                             OR_low = exp(confint(m))[2,1],
+                             OR_high = exp(confint(m))[2,2]
+                           ))}
+train_logis_red
+
+```
+
+### 4.2.5 Survival
+```{r, echo=FALSE}
+train_logis_death <- data.frame()
+# check single variable p-value check
+for(prm in vars){
+  f <- as.formula(paste("DEATH ~", prm))
+  m <- glm(f, data=train_ml, family=binomial)
+  train_logis_death <- rbind(train_logis_death,
+                   data.frame(
+                     variable = prm,
+                     P_value = coef(summary(m))[2,4],
+                     OR = exp(coef(m))[2],
+                     OR_low = exp(confint(m))[2,1],
+                     OR_high = exp(confint(m))[2,2]
+                   ))}
+train_logis_death
+```
+
+### 4.2.6 Heatmap
+```{r, echo=FALSE}
+train_logis_er$endpoint <- "ED Visit"
+train_logis_dis$endpoint <- "Discontinuation"
+train_logis_hos$endpoint <- "Hopitalization"
+train_logis_red$endpoint <- "Reduction"
+train_logis_death$endpoint <- "Survival"
+
+train_heatmap <- rbind(train_logis_er, train_logis_dis, train_logis_hos, train_logis_red,train_logis_death)
+
+train_heatmap$logOR <- log(train_heatmap$OR)
+
+train_heatmap <- train_heatmap %>%
+  mutate(signif = case_when(
+    P_value < 0.001 ~ "***",
+    P_value < 0.01  ~ "**",
+    P_value < 0.05  ~ "*",
+    TRUE            ~ ""  
+  ))
+
+p1 <- ggplot(train_heatmap, aes(x = variable, y = endpoint, fill = log(OR))) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = signif), color = "black", size = 8) +
+  scale_fill_gradient2(
+    low = "darkblue",
+    mid = "white",
+    high = "red",
+    midpoint = 0,
+    
+    limits = c(-0.5, 1),   
+    breaks = c(-0.5, 0, 0.5, 1),  
+    labels = c("-0.5", "0", "0.5", "1.0"),
+    
+    name = "Log(OR)",
+    
+    guide = guide_colorbar(
+      title.position = "top",
+      barwidth = 1,              
+      barheight = 8,            
+      frame.colour = "black",    
+      ticks.colour = "black"     
+    )
+  ) +
+  
+  coord_equal() +
+  labs(x = NULL, y = NULL) +
+  
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0)) +
+  
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 15, color = "black"),
+    axis.text.y = element_text(size = 15.5, color = "black"),
+    axis.title = element_text(size = 15.5),
+    
+    legend.title = element_text(size = 15, face = "bold"),  
+    legend.text = element_text(size = 15),                  
+    legend.position = "right",
+    
+    plot.margin = margin(5, 5, 5, 5, "mm")
+  )
+
+print(p1)
+
+grid::grid.text(
+  "* P < 0.05, ** P < 0.01, *** P < 0.001", 
+  x = 0.2, y = 0.15, 
+  gp = gpar(cex = 0.8, fontface = "italic")
+)
+```
+
+

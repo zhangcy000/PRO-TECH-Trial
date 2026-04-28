@@ -1,0 +1,108 @@
+---
+title: "DATASET GENERATION"
+author: "Congyu Zhang"
+output: html_document
+---
+# 1. Load packages and set up environment
+
+```{r setup, include=FALSE, echo=FALSE}
+rm(list=ls())
+
+library(dplyr)
+library(tidyr)
+library(here)
+```
+
+# 2. Import the raw data
+
+```{r, echo=FALSE}
+# IRT Model (training)
+train_irt <- read.csv(here("data","IRT_data","full_IRT_training.csv"))
+
+#PRO total model (training)
+train_total <- read.csv(here("data","PROtotal_data","pro_missing_train.csv"))
+```
+
+# 3.1. Synthesis data
+
+```{r, echo=FALSE}
+n_patients  <- 30
+time_points <- c(0, 7, 14, 28, 35, 42, 49, 56, 63)
+vars        <- 1:14
+```
+
+## 3.1.1 IRT Model
+
+```{r, echo=FALSE}
+set.seed(123)
+
+# Per-patient demographics (one row per patient, same value across 
+# all time points)
+demo <- data.frame(
+  ID         = 1:n_patients,
+  AGE        = sample(29:89, n_patients, replace = TRUE),
+  SEX        = sample(c(1, 2), n_patients, replace = TRUE),
+  ECOG       = sample(c(0, 1, 2, 3), n_patients, replace = TRUE),
+  ETHNICITY  = sample(c(0, 1), n_patients, replace = TRUE),
+  RACE       = sample(c(0, 1), n_patients, replace = TRUE),
+  CANCERTYPE = sample(c(0, 1), n_patients, replace = TRUE),
+  IV         = sample(c(0, 1), n_patients, replace = TRUE),
+  PO         = sample(c(0, 1), n_patients, replace = TRUE)
+)
+
+# Full grid: ID x TIME x VAR -> attach random DV and demographics
+synthesis_irt <- expand.grid(
+    ID   = 1:n_patients,
+    TIME = time_points,
+    VAR  = vars
+  ) %>%
+  mutate(
+    DV  = sample(0:3, n(), replace = TRUE),
+    DV2 = 4 - DV
+  ) %>%
+  left_join(demo, by = "ID") %>%
+  select(ID, VAR, TIME, DV, DV2, AGE, SEX, ECOG, ETHNICITY, RACE, CANCERTYPE, IV, PO) %>%
+  arrange(ID, VAR, TIME)
+
+head(synthesis_irt)
+
+#write.csv(synthesis_irt, here("data","synthesis_IRT.csv"), row.names = FALSE)
+
+```
+
+
+## 3.1.2 PRO total Model
+
+```{r, echo=FALSE}
+set.seed(1234)
+
+# Per-patient demographics (one row per patient, same value across all time points)
+demo_total <- data.frame(
+  ID         = 1:n_patients,
+  AGE        = sample(29:89, n_patients, replace = TRUE),
+  SEX        = sample(c(1, 2), n_patients, replace = TRUE),
+  ECOG       = sample(c(0, 1, 2, 3), n_patients, replace = TRUE),
+  ETHNICITY  = sample(c(0, 1), n_patients, replace = TRUE),
+  RACE       = sample(c(0, 1), n_patients, replace = TRUE),
+  CANCERTYPE = sample(c(0, 1), n_patients, replace = TRUE),
+  IV         = sample(c(0, 1), n_patients, replace = TRUE),
+  PO         = sample(c(0, 1), n_patients, replace = TRUE)
+)
+
+# Generate DV (0-4) per ID x TIME x VAR, then sum across 14 VARs -> SCORE
+synthesis_total <- expand.grid(
+    ID   = 1:n_patients,
+    TIME = time_points,
+    VAR  = vars
+  ) %>%
+  mutate(DV = sample(0:4, n(), replace = TRUE)) %>%
+  group_by(ID, TIME) %>%
+  summarise(SCORE = sum(DV), .groups = "drop") %>%
+  left_join(demo_total, by = "ID") %>%
+  select(ID, TIME, SCORE, AGE, SEX, ECOG, ETHNICITY, RACE, CANCERTYPE, IV, PO) %>%
+  arrange(ID, TIME)
+
+head(synthesis_total)
+
+#write.csv(synthesis_total, here("data","synthesis_PROtotal.csv"), row.names = FALSE)
+```

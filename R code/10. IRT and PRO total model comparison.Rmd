@@ -1,0 +1,447 @@
+---
+title: "IRT vs. PRO Total comparison"
+author: "Congyu Zhang"
+output: html_document
+---
+# 1. Load packages and set up environment
+
+```{r setup, include=FALSE, echo=FALSE}
+rm(list=ls())
+
+library(here)
+library(dplyr)
+library(dunn.test)
+library(ggplot2)
+library(ggpubr)
+
+```
+
+# 2. Import the raw data and transformation
+Individual parameter from IRT or PRO total model
+# 2.1 IRT data
+```{r, echo=FALSE}
+train_irt_prm <- read.csv(here("data","irt_data","ML_data","model_output","train.txt")) %>%
+          select(id,contains("SAEM")) %>% 
+          select(-matches("DIS([1-9]|1[0-4])")) %>%
+          select(-matches("Q([1-9]|1[0-4])th1")) %>%
+          select(-matches("Q([1-9]|1[0-4])th2")) %>%
+          select(-matches("Q([1-9]|1[0-4])th3")) %>%
+          rename_with(~gsub("_SAEM$", "", .), contains("SAEM")) %>%
+          rename(PTID = id,EMAXGI = PROGGI,EMAXPS = PROGPS,EMAXPD = PROGPD) 
+```
+
+# 2.2 PRO total data
+```{r, echo=FALSE}
+train_pro_prm <- read.csv(here("data","prototal_data","prototal_final_individual.txt")) %>%
+          select(id,contains("SAEM")) %>% 
+          select(-matches("DIS([1-9]|1[0-4])")) %>%
+          select(-matches("Q([1-9]|1[0-4])th1")) %>%
+          select(-matches("Q([1-9]|1[0-4])th2")) %>%
+          select(-matches("Q([1-9]|1[0-4])th3")) %>%
+          rename_with(~gsub("_SAEM$", "", .), contains("SAEM")) %>%
+          rename(PTID = id) %>%
+          select(-tau,-gamma0,-gamma1)
+```
+
+# 3. Statistical analysis
+
+The aim of this analysis is to compare the parameter distribution of each cancer type and previous treatment
+1. Kruskal–Wallis test to assess overall group differences.
+2. If p < 0.05, proceed with pairwise post-hoc Dunn's comparisons. Adjustment for multiple testing using Holm-Bonferroni.
+
+# 3.1 Import the demographics
+```{r, echo=FALSE}
+
+train_demo <- read.csv(here("data","IRT_data","ML_data","full_IRT_training.csv")) %>%
+  group_by(PTID) %>%
+  distinct(PTID,.keep_all = TRUE) %>%
+  select(PTID,CANCERTYPE,IV,PO) %>%
+# regroup some covariates (same as previous multivariable regression of each endpoint)
+  # rename IV treatment
+  mutate(IV = factor(case_when(
+    IV == 1 ~ "Chemo",
+    IV == 2 ~ "Target",
+    IV == 3 ~ "Immuno",
+    IV == 4 ~ "Combination",
+    IV == 5 ~ "None or Unclassified"),
+    levels = c(
+      "Chemo",
+      "Target",
+      "Immuno",
+      "Combination",
+      "None or Unclassified"
+    ))) %>%
+  # rename PO treatment
+  mutate(PO = factor(case_when(
+    PO == 1 ~ "TKI",
+    PO == 2 ~ "None or Unclassified"))) %>%
+  # rename cancer type
+  mutate(CANCERTYPE = factor(case_when(
+    CANCERTYPE == 1 ~ "Thoracic",
+    CANCERTYPE == 2 ~ "Breast",
+    CANCERTYPE %in% c(3,9,10) ~ "Gastrointestinal", #(Colorectal/Anal,Gastro-esophageal,Small bowel and 'Pancreas, Hepatobiliary)
+    CANCERTYPE %in% c(4,8) ~ "Genitourinary",
+    CANCERTYPE == 5 ~ "Gynecologic",
+    CANCERTYPE %in% c(6,7,99) ~ "Other tumors"),
+    levels = c(
+      "Thoracic",
+      "Breast",
+      "Gastrointestinal",
+      "Genitourinary",
+      "Gynecologic",
+      "Other tumors"
+    )))
+```
+
+# 3.2 IRT model comparsion
+## 3.2.1 Cancer type
+
+```{r}
+train <- train_demo %>%
+        left_join(train_irt_prm,by = "PTID")
+
+vars <- c("BASEGI","EMAXGI","KDGI","SLPGI",
+          "BASEPS","EMAXPS","KDPS","SLPPS",
+          "BASEPD","EMAXPD","KDPD","SLPPD")
+
+# Kruskal-Wallis results
+krus_cancer_irt <- data.frame()
+for (var in vars) {
+  kw <- kruskal.test(as.formula(paste(var, "~ CANCERTYPE")), data = train)
+  krus_cancer_irt <- rbind(krus_cancer_irt, data.frame(
+    parameter = var,
+    H = round(kw$statistic, 3),
+    p_value = round(kw$p.value, 4)
+  ))
+}
+
+print(krus_cancer_irt)
+#parameter      H p_value
+#Kruskal-Wallis chi-squared	BASEGI	15.284	0.0092	
+#Kruskal-Wallis chi-squared8	BASEPD	13.484	0.0192	
+
+# Dunn test to identify the significant pairs
+signif_cancer_irt_prm <- krus_cancer_irt$parameter[krus_cancer_irt$p_value < 0.05]
+
+for (var in signif_cancer_irt_prm) {
+  print(var)
+  dunn.test(train[[var]], train$CANCERTYPE, method = "holm")
+}
+```
+
+### 3.2.1 BASEGI (p<0.05)
+```{r}
+# description value of each group
+train %>%
+  group_by(CANCERTYPE) %>%
+  summarise(median = median(BASEGI))
+
+# ggplot
+p1 <- ggboxplot(train, x = "CANCERTYPE", y = "BASEGI",
+          fill = "CANCERTYPE", palette = "nejm",
+          add = "jitter", add.params = list(alpha = 0.5)) +
+  geom_signif(
+    comparisons = list(c("Genitourinary", "Breast"), c("Genitourinary", "Gastrointestinal")),  
+    annotations = c("p = 0.013", "p = 0.002"),       
+    y_position = c(5.6, 6),        
+    tip_length = 0.02, textsize = 6.2
+  )+
+  stat_compare_means(method = "kruskal.test",
+                     label.x = 0.8,
+                     label.y = max(train$BASEGI)*1.1,
+                     size = 6.2) +
+  labs(x = "Cancer Type",y = "Baseline PRO") +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 18.5, color = "black", hjust =1, angle = 30),
+        axis.text.y = element_text(size = 18, color = "black"),
+        axis.title = element_text(size = 19, face = "bold")
+  )
+print(p1)
+
+ggsave("plot/figure6b.tiff",
+       plot = p1,
+       width = 10.5,
+       height = 6,
+       units = "in",
+       dpi = 300)
+
+```
+
+### 3.2.1 BASEPD (p<0.05)
+```{r}
+# description value of each group
+train %>%
+  group_by(CANCERTYPE) %>%
+  summarise(median = median(BASEPD))
+
+# ggplot
+p2 <- ggboxplot(train, x = "CANCERTYPE", y = "BASEPD",
+          fill = "CANCERTYPE", palette = "nejm",
+          add = "jitter", add.params = list(alpha = 0.5)) +
+  geom_signif(
+    comparisons = list(c("Thoracic", "Gastrointestinal")),  
+    annotations = c("p = 0.017"),       
+    y_position = 5.9,        
+    tip_length = 0.02,textsize = 6.2
+  )+
+  stat_compare_means(method = "kruskal.test",
+                     label.x = 0.8,
+                     label.y = 7, size = 6.2) +
+  labs(x = "Cancer Type", y = "Baseline PRO") +
+  scale_y_continuous(limits = c(-1, 7), breaks = seq(-1, 7, 2)) +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 18.5, color = "black", hjust =1, angle = 30),
+        axis.text.y = element_text(size = 18, color = "black"),
+        axis.title = element_text(size = 19, face = "bold")
+  )
+
+print(p2)
+
+ggsave("plot/figure6c.tiff",
+       plot = p2,
+       width = 10.5,
+       height = 6,
+       units = "in",
+       dpi = 300)
+
+```
+
+
+
+## 3.2.2 Previous treatment
+
+```{r}
+krus_iv_irt <- data.frame()
+for (var in vars) {
+  kw <- kruskal.test(as.formula(paste(var, "~ IV")), data = train)
+  krus_iv_irt <- rbind(krus_iv_irt, data.frame(
+    parameter = var,
+    H = round(kw$statistic, 3),
+    p_value = round(kw$p.value, 4)
+  ))
+}
+
+print(krus_iv_irt)
+#parameter      H p_value
+#Kruskal-Wallis chi-squared	BASEGI	18.584	0.0009	
+#Kruskal-Wallis chi-squared7	SLPPS	18.100	0.0012	
+#Kruskal-Wallis chi-squared11	SLPPD	22.441	0.0002	
+
+# Dunn test to identify the significant pairs
+signif_iv_irt_prm <- krus_iv_irt$parameter[krus_iv_irt$p_value < 0.05]
+
+for (var in signif_iv_irt_prm) {
+  print(var)
+  dunn.test(train[[var]], train$IV, method = "holm")
+}
+
+table(train$IV)
+```
+### 3.2.2 SLPPS (p<0.05)
+```{r}
+train %>%
+  group_by(IV) %>%
+  summarise(median = median(SLPPS))
+
+# ggplot
+p3 <- ggboxplot(train, x = "IV", y = "SLPPS",
+          fill = "IV", palette = "nejm",
+          add = "jitter", add.params = list(alpha = 0.5)) +
+  geom_signif(comparisons = list(c("Target", "Chemo")),  
+              annotations = c("p = 0.009"), 
+              y_position = 6, tip_length = 0.004,textsize = 6.2) +
+  stat_compare_means(method = "kruskal.test",
+                     label.x = 2,label.y = 9.7, size = 6.2) +
+  scale_y_continuous(limits = c(0,10), breaks = seq(0, 10, 2.5)) +
+  labs(x = "Treatment", y = "SLP") +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 18.5, color = "black", hjust =1, angle = 30),
+        axis.text.y = element_text(size = 18, color = "black"),
+        axis.title = element_text(size = 19, face = "bold")
+  )
+print(p3)
+
+ggsave("plot/figure6e.tiff",
+       plot = p3,
+       width = 10.5,
+       height = 6,
+       units = "in",
+       dpi = 300)
+```
+
+### 3.2.3 SLPPD (p<0.05)
+
+```{r}
+train %>%
+  group_by(IV) %>%
+  summarise(median = median(SLPPD))
+
+# ggplot
+p4 <- ggboxplot(train, x = "IV", y = "SLPPD",
+          fill = "IV", palette = "nejm",
+          add = "jitter", add.params = list(alpha = 0.5)) +
+  geom_signif(comparisons = list(c("Target", "Chemo"),c("None or Unclassified", "Chemo")),  
+              annotations = c("p = 0.001", "p = 0.002"),    
+              y_position = c(10,13), tip_length = 0.004,textsize = 6.2) +
+  stat_compare_means(method = "kruskal.test",
+                     label.x = 0.8,
+                     label.y = 19.8, size = 6.2) +
+  scale_y_continuous(limits = c(0,20)) +
+  labs(x = "Treatment",y = "SLP") +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 18.5, color = "black", hjust =1, angle = 30),
+        axis.text.y = element_text(size = 18, color = "black"),
+        axis.title = element_text(size = 19, face = "bold")
+  )
+
+print(p4)
+
+ggsave("plot/figure6f.tiff",
+       plot = p4,
+       width = 10.5,
+       height = 6,
+       units = "in",
+       dpi = 300)
+
+```
+
+# 3.3 PRO total model comparsion
+## 3.3.1 Cancer type
+```{r}
+train_pro <- train_demo %>%
+        left_join(train_pro_prm,by = "PTID")
+
+vars_pro <- c("BASEP","Emax","Kd","SLP")
+
+# Kruskal-Wallis results
+krus_cancer_pro <- data.frame()
+for (var in vars_pro) {
+  kw <- kruskal.test(as.formula(paste(var, "~ CANCERTYPE")), data = train_pro)
+  krus_cancer_pro <- rbind(krus_cancer_pro, data.frame(
+    parameter = var,
+    H = round(kw$statistic, 3),
+    p_value = round(kw$p.value, 4)
+  ))
+}
+
+print(krus_cancer_pro)
+
+#parameter      H p_value (no significant difference)
+#Kruskal-Wallis chi-squared	BASEP	8.107	0.1504	
+#Kruskal-Wallis chi-squared1	Emax	10.934	0.0527	
+#Kruskal-Wallis chi-squared2	Kd	10.622	0.0594	
+#Kruskal-Wallis chi-squared3	SLP	3.806	0.5777
+
+```
+
+Generate the plot for BASEP (total baseline) and compare with IRT individual baseline
+```{r}
+# --- paramter BASEP 
+# description value of each group
+train_pro %>%
+  group_by(CANCERTYPE) %>%
+  summarise(median = median(BASEP))
+
+# ggplot
+pro_p1 <- ggboxplot(train_pro, x = "CANCERTYPE", y = "BASEP",
+          fill = "CANCERTYPE", palette = "nejm",
+          add = "jitter", add.params = list(alpha = 0.5)) +
+  stat_compare_means(method = "kruskal.test",
+                     label.x = 0.8,
+                     label.y = 0.9, size = 6.2) +
+  labs(x = "Cancer Type", y = "Baseline PRO") +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 18.5, color = "black", hjust =1, angle = 30),
+        axis.text.y = element_text(size = 18, color = "black"),
+        axis.title = element_text(size = 19, face = "bold")
+  )
+
+print(pro_p1)
+
+ggsave("plot/figure6a.tiff",
+       plot = pro_p1,
+       width = 10.5,
+       height = 6,
+       units = "in",
+       dpi = 300)
+```
+
+## 3.3.2 Previou Treatment
+```{r}
+krus_iv_pro <- data.frame()
+for (var in vars_pro) {
+  kw <- kruskal.test(as.formula(paste(var, "~ IV")), data = train_pro)
+  krus_iv_pro <- rbind(krus_iv_pro, data.frame(
+    parameter = var,
+    H = round(kw$statistic, 3),
+    p_value = round(kw$p.value, 4)
+  ))
+}
+
+print(krus_iv_pro)
+
+#parameter      H p_value (no significant difference)
+#Kruskal-Wallis chi-squared	BASEP	6.686	0.1534	
+#Kruskal-Wallis chi-squared1	Emax	5.043	0.2830	
+#Kruskal-Wallis chi-squared2	Kd	1.418	0.8411	
+#Kruskal-Wallis chi-squared3	SLP	6.509	0.1642	
+
+```
+
+Generate the plot for SLP (total deterioration rate) and compare with IRT individual deterioration rate
+
+```{r}
+# --- parameter SLP 
+# description value of each group
+train_pro %>%
+  group_by(CANCERTYPE) %>%
+  summarise(median = median(SLP))
+
+# ggplot
+pro_p2 <- ggboxplot(train_pro, x = "IV", y = "SLP",
+                    fill = "IV", palette = "nejm",
+                    add = "jitter", add.params = list(alpha = 0.5)) +
+  stat_compare_means(method = "kruskal.test",
+                     label.x = 0.8,
+                     label.y = 12.3, size = 6.2) +
+  labs(x = "Treatment", y = "SLP") +
+  scale_y_continuous(limits = c(-7.5,12.5), breaks = seq(-7.5,12.5,5)) +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 18.5, color = "black", hjust =1, angle = 30),
+        axis.text.y = element_text(size = 18, color = "black"),
+        axis.title = element_text(size = 19, face = "bold")
+  )
+
+print(pro_p2)
+
+ggsave("plot/figure6d.tiff",
+       plot = pro_p2,
+       width = 10.5,
+       height = 6,
+       units = "in",
+       dpi = 300)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

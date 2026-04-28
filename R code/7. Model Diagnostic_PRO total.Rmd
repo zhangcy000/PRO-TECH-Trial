@@ -1,0 +1,554 @@
+---
+title: "PRO total model diagnostic"
+author: "Congyu Zhang"
+output: html_document
+---
+# 1. Load packages and set up environment
+
+```{r setup, include=FALSE, echo=FALSE}
+rm(list=ls())
+
+library(ggforce)
+library(ggplot2)
+library(dplyr)
+library(ggsci)
+library(here)
+library(patchwork)
+
+```
+
+# 2. Obs vs IPRD and Individual Plots
+
+```{r, echo=FALSE}
+pred <- read.table(here("data", "PROtotal_data","tables.txt"),sep = ",",
+                   comment.char = "",
+                   header = T)
+
+prm_beta <- read.table(here("data", "PROtotal_data","individual_prm.txt"),
+                       sep = ",",comment.char = "", header = T) %>%
+                select(id,contains("mode")) %>% 
+                rename_with(~gsub("_mode$", "", .), contains("mode")) %>%
+                #remove beta regression parameters
+                select(-tau,-gamma0,-gamma1)
+
+# load data
+dat <- read.csv(here("data", "PROtotal_data","LOCF_train.csv"), header=T)
+
+### Obs vs IPRED
+ipred <- pred %>% select(id, time, PROipred_mode) 
+obs <- dat %>% select(PTID, TAFR, SCORE ) %>% rename(id = PTID, time=TAFR)
+ipred2 <- merge(ipred, obs, by=c('id','time'))
+
+p1 <- ggplot(data = ipred2, aes(x = PROipred_mode, y = SCORE))+
+  geom_point(color='steelblue', alpha=0.5)+
+  geom_abline(slope=1, intercept = 0, color ='black',size=1.5, linetype='dashed')+
+  labs(y = 'Observations',x='Individual Predictions')+
+  theme_bw()+
+  theme(
+    axis.title = element_text(size=20),
+    axis.text = element_text(size=15, color = "black"),
+    legend.position = "none"
+  )+
+  scale_y_continuous(limits=c(0, 60))+
+  scale_x_continuous(limits=c(0, 60))
+
+print(p1)
+
+```
+
+# 3. Individual Plot 
+sample 14 patient randomly
+
+```{r, echo=FALSE}
+set.seed(123)
+random.id <- sample(unique(ipred2$id),16,replace = FALSE)
+
+label_data <- prm_beta %>%
+  filter(id %in% random.id) %>%
+  mutate(label = paste0(
+    "BASEP: ", round(BASEP, 2), "\n",
+    "Emax: ",  round(Emax,  2), "\n",
+    "Kd: ",   round(Kd,    4), "\n",
+    "SLP: ",  round(SLP,   2)
+  ))
+
+ipred_plot <- ipred2 %>%
+              filter(id %in% random.id)
+
+p <- ggplot(data = ipred_plot) +
+  geom_line(aes(x = time, y = PROipred_mode, color = 'IPRED'), size = 1) +
+  geom_point(aes(x = time, y = SCORE, color = 'OBS'),size = 1.2,alpha =1) +
+  geom_text(data = label_data,
+            aes(x = Inf, y = Inf, label = label),
+            hjust = 1.1,       
+            vjust = 1.1,       
+            size  = 4.5,
+            lineheight = 0.8, 
+            color = 'black',
+            inherit.aes = FALSE) +
+
+  facet_wrap_paginate(~ id,
+                      ncol = 7, nrow = 2,
+                      page = 1) +
+  scale_color_manual(
+    name   = "",
+    values = c('IPRED' = '#4472C4', 'OBS' = '#C0504D'),
+    labels = c('IPRED' = 'Individual Prediction', 'OBS' = 'Observed')
+  ) +
+  labs(x = "Time (days)", y = "PRO Total Score") +
+  scale_y_continuous(limits = c(0, 60)) +
+  scale_x_continuous(limits = c(0, 400)) +
+  theme_bw() +
+  theme(
+    axis.title       = element_text(size = 14,face = "bold"),
+    axis.text        = element_text(size = 14, color = "black"),
+    strip.text       = element_text(size = 15, face = 'bold'),
+    strip.background = element_rect(fill = "lightgray"),
+    legend.position  = 'top',
+    legend.text      = element_text(size = 15),
+    panel.grid.minor = element_blank()
+  )
+
+print(p)
+
+ggsave("plot/figure2h.tiff",
+       plot = p,
+       width = 16,
+       height = 6,
+       units = "in",
+       dpi = 300)
+
+```
+
+# 3. Forest Plot for Covariate Analysis 
+Compare the BASEP within each covariate groups (ECOG and SEX)
+
+```{r, echo=FALSE}
+dat <- read.csv(here("data", "PROtotal_data","simulation","simulation_PRO_score.txt")) %>%
+           filter(time == 0) %>%
+           select(-id,-time) %>%
+           mutate(group = if_else(group == "SEX2", "Female", group)) %>%
+           mutate(group = if_else(group == "ECOG2", "ECOG2/3", group))
+
+# calculate ratio to ref in each replicate
+ref_means <- dat %>%
+  filter(group == "Ref") %>%
+  select(rep, ref_score = PRO_score)
+
+ratios <- dat %>%
+  filter(group != "Ref") %>%
+  left_join(ref_means, by = "rep") %>%
+  mutate(ratio = PRO_score / ref_score)
+
+plot_data <- ratios %>%
+  mutate(covariate = case_when(
+    group == "Female"~ "Sex",
+    group %in% c("ECOG1", "ECOG2/3") ~ "ECOG")) %>%
+  group_by(covariate, group) %>%
+  # 90% CI
+  summarise(
+    median = median(ratio),
+    lower  = quantile(ratio, 0.05),
+    upper  = quantile(ratio, 0.95),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    label_stats = sprintf("%.2f [%.2f-%.2f]", median, lower, upper),
+    label = paste0(group, "\n", label_stats)
+  )
+
+# add the reference line for each covariate
+ref_rows <- tibble(
+  covariate   = c("Sex","ECOG"),
+  group       = c("Male","ECOG0"),
+  median      = 1,
+  lower       = 1,
+  upper       = 1,
+  label       = c("Male \n 1.00 (ref)",
+                  "ECOG0 \n 1.00 (ref)")
+)
+
+# combine reference with previous data frame and set factor levels
+plot_data <- bind_rows(plot_data, ref_rows) %>%
+  mutate(
+    sort_order = case_when(
+      group == "ECOG0"  ~ 1,
+      group == "ECOG1"  ~ 2,
+      group == "ECOG2/3"  ~ 3,
+      group == "Male"   ~ 1,
+      group == "Female" ~ 2
+    )
+  ) %>%
+  arrange(covariate, sort_order) %>%
+  mutate(label = factor(label, levels = rev(unique(label))))
+
+cov_forest <- ggplot(plot_data, aes(x = median, y = label)) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "gray50") +
+  geom_errorbarh(aes(xmin = lower, xmax = upper),
+                 height = 0.2, linewidth = 0.8) +
+  geom_point(size = 3) +
+  facet_wrap(~ covariate, ncol = 1, scales = "free_y") +
+  labs(x = "Relative Baseline PRO Total Score", y = "") +
+  theme_bw() +
+  theme(
+    plot.margin      = margin(r = 1, unit = "pt"),
+    axis.text        = element_text(size = 14.5, color = "black"),
+    axis.title       = element_text(size = 14, face = "bold"),
+    strip.text       = element_text(size = 14.5, face = "bold"),
+    strip.background = element_rect(fill = "lightgray", color = NA)
+  ) +
+  scale_x_continuous(breaks = seq(0.5, 3.5, 0.5), limits = c(0.5, 3.5))
+
+print(cov_forest)
+
+ggsave("plot/figure2e.tiff",
+       plot = cov_forest,
+       width = 7,
+       height = 4.5,
+       units = "in",
+       dpi = 300)
+
+```
+
+# 4. VPC 
+## 4.1 PRO total Training Model
+
+```{r, echo=FALSE}
+rm(list=ls())
+
+#=====================================================================================
+# Function to generate the data for VPC
+#=====================================================================================
+draw_vpc_categorical <- function(project.name, simdata) {
+  
+  # Read empirical distribution data
+  empirical <- read.csv(here("data", "PROtotal_data",
+                             paste0(project.name, "/ChartsData/VisualPredictiveCheck/PRO_score_distribution.txt")),
+                        header = TRUE)
+  
+  # Extract bin edges from empirical data
+  bins       <- sort(unique(c(empirical$binsTimeBefore, empirical$binsTimeAfter)))
+  binsmiddle <- (bins[-1] + bins[-length(bins)]) / 2
+  
+  # Assign simulated data to bins
+  simdata$binindex <- findInterval(simdata$time, bins, all.inside = TRUE)
+  
+  # Define the function for different beta regression category
+  # category [0-9]  : sim_PRO >= 0  & sim_PRO <= 9
+  # category [10-51]: sim_PRO >= 10 & sim_PRO <= 51
+  cat_labels <- c("[0-9]", "[10-51]")
+  cat_funs   <- list(
+    "[0-9]"   = function(x) x >= 0  & x <= 9,
+    "[10-51]" = function(x) x >= 10 & x <= 51
+  )
+  
+  # Calculate proportions for each category in each bin for each replicate
+  pred_list <- list()
+  
+  for (cat in cat_labels) {
+    prop_cat <- aggregate(
+      cat_funs[[cat]](simdata$sim_PRO),
+      by  = list(bin = simdata$binindex, rep = simdata$rep),
+      FUN = mean
+    )
+    names(prop_cat)[3] <- "proportion"
+    
+    pred_lower  <- aggregate(proportion ~ bin, data = prop_cat, FUN = function(x) quantile(x, 0.025))
+    pred_median <- aggregate(proportion ~ bin, data = prop_cat, FUN = function(x) quantile(x, 0.500))
+    pred_upper  <- aggregate(proportion ~ bin, data = prop_cat, FUN = function(x) quantile(x, 0.975))
+    
+    pred_intervals <- data.frame(
+      bin        = pred_lower$bin,
+      bin_middle = binsmiddle[pred_lower$bin],
+      lower      = pred_lower$proportion,
+      median     = pred_median$proportion,
+      upper      = pred_upper$proportion,
+      category   = cat
+    )
+    
+    pred_list[[cat]] <- pred_intervals
+  }
+  
+  pred_all <- do.call(rbind, pred_list)
+  
+  # Calculate each category percentage for empirical data  
+  empirical_clean <- empirical %>%
+    mutate(bin_middle = (binsTimeBefore + binsTimeAfter) / 2) %>%
+    select(bin_middle, category, propCategory_empirical)
+  
+  # Return data frame for plotting
+  vpc_data <- pred_all %>%
+    left_join(empirical_clean, by = c("bin_middle", "category"))
+  
+  return(vpc_data)
+}
+
+#===============================================================================
+# VPC as in Monolix: the same observation times as in the data set are used
+# whatever the new simulated dropout (death) time is
+#===============================================================================
+project.name <- "TTE_final"
+
+simdata <- read.csv(here("data","PROtotal_data",
+                         paste0(project.name, "/ChartsData/VisualPredictiveCheck/PRO_score_simulations.txt")), header = TRUE)
+
+vpc_basic <- draw_vpc_categorical(project.name, simdata)
+
+p1 <- ggplot(vpc_basic, aes(x = bin_middle)) +
+  
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = category),
+              alpha = 0.5) +
+  
+  geom_line(aes(y = median, color = category),
+            linewidth = 1, linetype = "dashed") +
+  
+  geom_line(aes(y = propCategory_empirical, color = category),
+            linewidth = 1) +
+  
+  facet_wrap(~ category,labeller = labeller(category = c("[0-9]"   = "Score 0–9",
+                                              "[10-51]" = "Score 10–51"))) +
+  
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  scale_color_manual(values = c("[0-9]"   = "royalblue4",
+                                "[10-51]" = "royalblue4")) +
+  scale_fill_manual( values = c("[0-9]"   = "grey60",
+                                "[10-51]" = "grey60")) +
+  
+  labs(x = "Time (days)", y = "Proportion") +
+  scale_x_continuous(limits = c(0, 400)) +
+  theme_bw() +
+  theme(
+    legend.position  = "none",
+    axis.text.x = element_text(hjust = 1, size = 14, color = "black"),
+    axis.text.y = element_text(size = 14, color = "black"),
+    axis.title = element_text(size = 14),
+    strip.text  = element_text(face = "bold", size = 15)
+  )
+print(p1)
+
+```
+```{r}
+#===============================================================================
+# VPC with removal of observation points happening after dropout
+#===============================================================================
+sim_survival <- read.csv(here("data","PROtotal_data",paste0(project.name, 
+                     "/ChartsData/VisualPredictiveCheck/survival_simulations.txt")), header = TRUE) %>%
+                select(rep,ID,time)
+
+dropouttable <- sim_survival[seq(2, nrow(sim_survival), by = 2), 1:3]
+colnames(dropouttable)[3] <- "dropouttime"
+
+simdata_OS <- merge(x=simdata,y=dropouttable,by=c("ID","rep"))
+simdata_OS <- simdata_OS[simdata_OS$time < simdata_OS$dropouttime, ] 
+
+vpc_dropout <- draw_vpc_categorical(project.name, simdata_OS)
+
+p2 <- ggplot(vpc_dropout, aes(x = bin_middle)) +
+  
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = category),alpha = 0.5) +
+  geom_line(aes(y = propCategory_empirical, color = category),linewidth = 1) +
+  
+  facet_wrap(~ category,labeller = labeller(category = c("[0-9]"   = "Score 0–9",
+                                                         "[10-51]" = "Score 10–51"))) +
+  
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  scale_color_manual(values = c("[0-9]"   = "royalblue4",
+                                "[10-51]" = "royalblue4")) +
+  scale_fill_manual(values = c("[0-9]"   = "grey60",
+                                "[10-51]" = "grey60")) +
+  
+  labs(x = "Time (days)", y = "Proportion") +
+  scale_x_continuous(limits = c(0, 400)) +
+  theme_bw() +
+  theme(
+    legend.position  = "none",
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_text(size = 15, color = "black"),
+    axis.title = element_text(face = "bold", size = 15),
+    strip.text  = element_text(face = "bold", size = 15)
+  )
+
+print(p2)
+
+ggsave("plot/figure2c.tiff",
+       plot = p2,
+       width = 7.5,
+       height = 3.5,
+       units = "in",
+       dpi = 300)
+
+
+```
+
+## 4.2 PRO total Validation Model
+```{r}
+#=====================================================================================
+# Function to generate the data for VPC
+#=====================================================================================
+draw_vpc_categorical <- function(project.name, simdata) {
+  
+  # Read empirical distribution data
+  empirical <- read.csv(here("data", "PROtotal_data",
+                             paste0(project.name, "/ChartsData/VisualPredictiveCheck/PRO_score_distribution.txt")),
+                        header = TRUE)
+  
+  # Extract bin edges from empirical data
+  bins       <- sort(unique(c(empirical$binsTimeBefore, empirical$binsTimeAfter)))
+  binsmiddle <- (bins[-1] + bins[-length(bins)]) / 2
+  
+  # Assign simulated data to bins
+  simdata$binindex <- findInterval(simdata$time, bins, all.inside = TRUE)
+  
+  # Define the function for different beta regression category
+  # category [0-11]  : sim_PRO >= 0  & sim_PRO <= 11
+  # category [12-47]: sim_PRO >= 12 & sim_PRO <= 47
+  cat_labels <- c("[0-11]", "[12-47]")
+  cat_funs   <- list(
+    "[0-11]"   = function(x) x >= 0  & x <= 11,
+    "[12-47]" = function(x) x >= 12 & x <= 47
+  )
+  
+  # Calculate proportions for each category in each bin for each replicate
+  pred_list <- list()
+  
+  for (cat in cat_labels) {
+    prop_cat <- aggregate(
+      cat_funs[[cat]](simdata$sim_PRO),
+      by  = list(bin = simdata$binindex, rep = simdata$rep),
+      FUN = mean
+    )
+    names(prop_cat)[3] <- "proportion"
+    
+    pred_lower  <- aggregate(proportion ~ bin, data = prop_cat, FUN = function(x) quantile(x, 0.025))
+    pred_median <- aggregate(proportion ~ bin, data = prop_cat, FUN = function(x) quantile(x, 0.500))
+    pred_upper  <- aggregate(proportion ~ bin, data = prop_cat, FUN = function(x) quantile(x, 0.975))
+    
+    pred_intervals <- data.frame(
+      bin        = pred_lower$bin,
+      bin_middle = binsmiddle[pred_lower$bin],
+      lower      = pred_lower$proportion,
+      median     = pred_median$proportion,
+      upper      = pred_upper$proportion,
+      category   = cat
+    )
+    
+    pred_list[[cat]] <- pred_intervals
+  }
+  
+  pred_all <- do.call(rbind, pred_list)
+  
+  # Calculate each category percentage for empirical data  
+  empirical_clean <- empirical %>%
+    mutate(bin_middle = (binsTimeBefore + binsTimeAfter) / 2) %>%
+    select(bin_middle, category, propCategory_empirical)
+  
+  # Return data frame for plotting
+  vpc_data <- pred_all %>%
+    left_join(empirical_clean, by = c("bin_middle", "category"))
+  
+  return(vpc_data)
+}
+
+#===============================================================================
+# VPC as in Monolix: the same observation times as in the data set are used
+# whatever the new simulated dropout (death) time is
+#===============================================================================
+project.name <- "TTE_validation"
+
+simdata <- read.csv(here("data","PROtotal_data",
+                         paste0(project.name, "/ChartsData/VisualPredictiveCheck/PRO_score_simulations.txt")), header = TRUE)
+
+vpc_basic <- draw_vpc_categorical(project.name, simdata)
+
+p1 <- ggplot(vpc_basic, aes(x = bin_middle)) +
+  
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = category),
+              alpha = 0.5) +
+  
+  geom_line(aes(y = median, color = category),
+            linewidth = 1, linetype = "dashed") +
+  
+  geom_line(aes(y = propCategory_empirical, color = category),
+            linewidth = 1) +
+  
+  facet_wrap(~ category,labeller = labeller(category = c("[0-11]"   = "Score 0–11",
+                                                         "[12-47]" = "Score 12–47"))) +
+  
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  scale_color_manual(values = c("[0-11]"   = "royalblue4",
+                                "[12-47]" = "royalblue4")) +
+  scale_fill_manual( values = c("[0-11]"   = "grey60",
+                                "[12-47]" = "grey60")) +
+  
+  labs(x = "Time (days)", y = "Proportion") +
+  scale_x_continuous(limits = c(0, 400)) +
+  theme_bw() +
+  theme(
+    legend.position  = "none",
+    axis.text.x = element_text(hjust = 1, size = 14, color = "black"),
+    axis.text.y = element_text(size = 14, color = "black"),
+    axis.title = element_text(size = 14),
+    strip.text  = element_text(face = "bold", size = 15)
+  )
+print(p1)
+
+```
+
+```{r}
+#===============================================================================
+# VPC with removal of observation points happening after dropout
+#===============================================================================
+sim_survival <- read.csv(here("data","PROtotal_data",paste0(project.name, 
+                            "/ChartsData/VisualPredictiveCheck/survival_simulations.txt")), header = TRUE) %>%
+                select(rep,ID,time)
+
+dropouttable <- sim_survival[seq(2, nrow(sim_survival), by = 2), 1:3]
+colnames(dropouttable)[3] <- "dropouttime"
+
+simdata_OS <- merge(x=simdata,y=dropouttable,by=c("ID","rep"))
+simdata_OS <- simdata_OS[simdata_OS$time < simdata_OS$dropouttime, ] 
+
+vpc_dropout <- draw_vpc_categorical(project.name, simdata_OS)
+
+p2 <- ggplot(vpc_dropout, aes(x = bin_middle)) +
+  
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = category),alpha = 0.5) +
+  geom_line(aes(y = propCategory_empirical, color = category),linewidth = 1) +
+  
+  facet_wrap(~ category,labeller = labeller(category = c("[0-11]"   = "Score 0–11",
+                                                         "[12-47]" = "Score 12–47"))) +
+  
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  scale_color_manual(values = c("[0-11]"   = "royalblue4",
+                                "[12-47]" = "royalblue4")) +
+  scale_fill_manual( values = c("[0-11]"   = "lightskyblue",
+                                "[12-47]" = "lightskyblue")) +
+  
+  labs(x = "Time (days)", y = "Proportion") +
+  scale_x_continuous(limits = c(0, 400)) +
+  theme_bw() +
+  theme(
+    legend.position  = "none",
+    axis.text.x = element_text(size = 15, color = "black"),
+    axis.text.y = element_text(size = 15, color = "black"),
+    axis.title = element_text(face = "bold", size = 15),
+    strip.text  = element_text(face = "bold", size = 15)
+  )
+
+print(p2)
+
+ggsave("plot/figure2d.tiff",
+       plot = p2,
+       width = 7.5,
+       height = 3.5,
+       units = "in",
+       dpi = 300)
+```
+
+
+
+

@@ -1,0 +1,1129 @@
+---
+title: "Data exploratory - Individual Score"
+author: "Congyu Zhang"
+output: html_document
+---
+# 1. Load packages and set up environment
+
+```{r setup, include=FALSE, echo=FALSE}
+rm(list=ls())
+
+library(here)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggsci)
+library(survival)
+library(survminer)
+library(gt)
+library(gtsummary)
+library(forestplot)
+library(broom)
+library(car)
+
+```
+
+# 2. Import the raw data 
+After exploratory analysis, level 3 and level 4 were recorded and combined together for further IRT model (limited level of level 4 data for all symptoms)
+
+```{r, echo=FALSE}
+# full PRO data
+pro <- read.csv(here("data","fulldata_IRT.csv")) %>%
+        mutate(DV = if_else(DV == 4, 3, DV),DV2 = 4 - DV) %>%
+        # re-code the binary outcome variable
+        mutate(DISCONTINUE = case_when(is.na(DISCONTINUE) ~ "0",TRUE ~ "1")) %>%
+        # rearrange the columns
+        select(PTID,CONSENT_DT,PROCTCAE,VAR,TIME,TAFR,DV,DV2,everything())
+
+# Time to Event (no time for discontinuation data)
+endpoint <- read.csv(here("data","endpoint.csv")) %>% 
+        mutate(DIS = case_when(is.na(C12_discontinuing_overall) ~ "0",TRUE ~ "1")) %>%
+        # missing means survival, recoded to 0 - survival; 1 - death
+        mutate(C9_death = case_when(is.na(C9_death) ~ "0",TRUE ~ "1"))
+```
+
+# 3.1. Data exploratory
+
+## 3.1.1 PRO level distribution of full data and baseline
+
+```{r, echo=FALSE}
+#--------------------------------------
+# Full data set distribution
+#--------------------------------------
+pro.count <- pro %>%
+  mutate(DV = if_else(is.na(DV), "Missing", as.character(DV)),
+         DV = factor(DV, levels = c("Missing","0","1","2","3"))
+        ) %>%
+  count(PROCTCAE, DV, name = "n") 
+
+PRO_map <- c(PROCTCAE_001 = "Activity",PROCTCAE_002 = "Depression",PROCTCAE_003 = "Appetite",
+             PROCTCAE_004 = "Pain_frequency",PROCTCAE_005 = "Pain_severity",PROCTCAE_006 = "Pain_interference",
+             PROCTCAE_007 = "Nausea_frequency",PROCTCAE_008 = "Nausea_severity",PROCTCAE_009 = "Vomit_frequency",
+             PROCTCAE_010 = "Diarrhea_frequency",PROCTCAE_011 = "Constipation_severity",PROCTCAE_012 = "Dyspnea_severity",
+             PROCTCAE_013 = "Dyspnea_interference", PROCTCAE_014 = "Insomnia_severity")
+
+pro.color <- c("Missing" = "grey50","0" = "darkgreen",  "1" = "green3", 
+               "2" = "orange", "3" = "#DB5829")
+
+pro.count.plot <- pro.count %>%
+    mutate(PROCTCAE = case_when(
+    grepl(names(PRO_map)[1], PROCTCAE, ignore.case = TRUE) ~ PRO_map[1],
+    grepl(names(PRO_map)[2], PROCTCAE, ignore.case = TRUE) ~ PRO_map[2],
+    grepl(names(PRO_map)[3], PROCTCAE, ignore.case = TRUE) ~ PRO_map[3],
+    grepl(names(PRO_map)[4], PROCTCAE, ignore.case = TRUE) ~ PRO_map[4],
+    grepl(names(PRO_map)[5], PROCTCAE, ignore.case = TRUE) ~ PRO_map[5],
+    grepl(names(PRO_map)[6], PROCTCAE, ignore.case = TRUE) ~ PRO_map[6],
+    grepl(names(PRO_map)[7], PROCTCAE, ignore.case = TRUE) ~ PRO_map[7],
+    grepl(names(PRO_map)[8], PROCTCAE, ignore.case = TRUE) ~ PRO_map[8],
+    grepl(names(PRO_map)[9], PROCTCAE, ignore.case = TRUE) ~ PRO_map[9],
+    grepl(names(PRO_map)[10], PROCTCAE, ignore.case = TRUE) ~ PRO_map[10],
+    grepl(names(PRO_map)[11], PROCTCAE, ignore.case = TRUE) ~ PRO_map[11],
+    grepl(names(PRO_map)[12], PROCTCAE, ignore.case = TRUE) ~ PRO_map[12],
+    grepl(names(PRO_map)[13], PROCTCAE, ignore.case = TRUE) ~ PRO_map[13],
+    grepl(names(PRO_map)[14], PROCTCAE, ignore.case = TRUE) ~ PRO_map[14]
+  ))
+
+
+p1 <- ggplot(pro.count.plot, aes(x = PROCTCAE, y = n, fill = DV)) +
+  geom_col(width = 0.8, color = "white", linewidth = 0.2) +
+  scale_fill_manual(values = pro.color, name = "Score",
+                labels = c("3" = "3/4", "2" = "2", "1" = "1", "0" = "0")) +
+  labs(x = NULL, y = "Count") +
+  theme_bw() +
+  theme(
+    legend.position = "top",
+    legend.text  = element_text(size = 15),
+    legend.title  = element_text(size = 15),
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black",size = 16),
+    axis.text.y = element_text(color = "black",size = 16),
+    axis.title = element_text(size= 15, face = "bold"),
+  )
+
+print(p1)
+
+ggsave("plot/Supplement1a.tiff",
+       plot = p1,
+       width = 14,
+       height = 6,
+       units = "in",
+       dpi = 300)
+
+#--------------------------------------
+# Baseline Distribution
+#--------------------------------------
+pro.count2 <- pro %>% 
+  filter(TAFR == "0") %>%
+  mutate(
+    DV = if_else(is.na(DV), "Missing", as.character(DV)),
+    DV = factor(DV, levels = c("Missing","0","1","2","3"))
+  ) %>%
+  count(PROCTCAE, DV, name = "n") 
+
+ggplot(pro.count2, aes(x = PROCTCAE, y = n, fill = DV)) +
+  geom_col(width = 0.8, color = "white", linewidth = 0.2) +
+  scale_fill_manual(values = pro.color, name = "Score") +
+  labs(x = NULL, y = "Count") +
+  theme_bw() +
+  theme(
+    legend.position = "top",
+    legend.text  = element_text(size = 15),
+    legend.title  = element_text(size = 15),
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black",size = 16),
+    axis.text.y = element_text(color = "black",size = 16),
+    axis.title = element_text(size= 15, face = "bold"),
+  )
+
+```
+
+## 3.1.2 Time to Event data analysis
+
+```{r, include=FALSE, echo=FALSE}
+
+# exclude patients without PRO data (these data didnt include in the model)
+PTID_no_missing <- pro %>%
+        filter(is.na(DV) == FALSE) %>%
+        pull(PTID) %>%
+        unique()
+
+endpoint <- endpoint %>%
+        filter(PTID %in% PTID_no_missing)
+
+# Occurrence of each event
+table(endpoint$C9_death)
+table(endpoint$C12_dose_reduction)
+table(endpoint$C12_er)
+table(endpoint$C12_hospital)
+table(endpoint$DIS)
+
+#--------------------------------------
+# Time to event distribution 
+#--------------------------------------
+#-- Dose reduction
+red_time <- endpoint %>%  
+  pivot_longer(starts_with("C12_DOSE_REDUCTION_DAY"),names_to = "reduction",values_to = "time") %>%
+  filter(!is.na(time),time >= 0) %>%
+  group_by(PTID) %>%
+  summarise(time = min(time), .groups = "drop") %>%
+  select(PTID, time)
+summary(red_time$time)
+
+#-- er visit
+er_time <- endpoint %>%  
+  pivot_longer(starts_with("C12_er_DAY"),names_to = "er",values_to = "time") %>%
+  filter(!is.na(time),time >= 0) %>%
+  group_by(PTID) %>%
+  summarise(time = min(time), .groups = "drop") %>%
+  select(PTID, time)
+summary(er_time$time)
+
+#-- Hospitalization
+hospital_time <- endpoint %>%  
+  pivot_longer(starts_with("C12_hospital_DAY"),names_to = "hospital",values_to = "time") %>%
+  filter(!is.na(time),time >= 0) %>%
+  group_by(PTID) %>%
+  summarise(time = min(time), .groups = "drop") %>%
+  select(PTID, time)
+summary(hospital_time$time)
+
+#-- Death
+survival_time <- endpoint %>%
+  rename(time = C9_death_date) %>%
+  filter(!is.na(time)) %>%
+  group_by(PTID) %>%
+  summarise(time = min(time), .groups = "drop") %>%
+  select(PTID, time)
+summary(survival_time$time)  
+
+#--------------------------------------
+# K-M Curve
+#--------------------------------------
+km_plot <- pro %>%
+  filter(PTID %in% PTID_no_missing) %>%  #filter out patients with no PRO data
+  rename(DTH = DEATH,DTHDY = DEATH.DATE) %>%
+  mutate(DTH = as.numeric(case_when(is.na(DTH) ~ "0",TRUE ~ "1"))) %>%
+  select(PTID,TIME,DV,DTH,DTHDY)
+
+# generate OS data frame
+os_row_list <- list()
+
+for (id in unique(km_plot$PTID)) {
+  patient_data <- km_plot[km_plot$PTID == id, ]
+  template <- km_plot[km_plot$PTID == id, ][1, ]
+  
+  # LAST observation (TIME=DTHDY, QSFLAG="OS")
+  if (!is.na(template$DTHDY)) {
+    # If DTH happened: use DTHDY
+    endpoint <- template
+    endpoint$TIME <- template$DTHDY
+    endpoint$DV <- template$DTH
+
+    os_row_list[[length(os_row_list) + 1]] <- endpoint
+  } else {
+    # If DTH not happen but censor: Use last observation TIME
+    last_obs_time <- max(patient_data$TIME, na.rm = TRUE)
+    
+    endpoint <- template
+    endpoint$TIME <- last_obs_time
+    endpoint$DV <- 0
+
+    os_row_list[[length(os_row_list) + 1]] <- endpoint
+  }
+}
+
+km_final <- bind_rows(os_row_list) %>%
+          select(-DTH,-DTHDY) %>%
+          rename(DTH = DV, DTHDY = TIME) %>%
+          mutate(DTHDY = DTHDY)
+
+# KM fit and curve
+km_fit <- survfit(Surv(DTHDY, DTH) ~ 1, data = km_final)
+
+km <- ggsurvplot(
+  km_fit,
+  data = km_final,
+  legend = "none", 
+  conf.int = FALSE,
+  palette = "jco",
+  
+  xlab = "Time (days)",
+  xlim = c(0, 720),
+  break.time.by = 120,
+
+  ylab = "Overall Survival (%)",
+  ylim = c(0, 1),              
+  yticklabs = c("0%", "25%","50%", "75%", "100%"),
+  surv.scale = "percent",
+  
+  size = 1.2,
+  censor = TRUE,
+  censor.shape = "+",
+  censor.size = 6,
+  
+  # font size
+  font.x = c(15, "bold", "black"),      
+  font.y = c(15, "bold", "black"),      
+  font.tickslab = c(15, "plain","black"),        
+  
+  risk.table = TRUE,
+  risk.table.height = 0.22,
+  risk.table.fontsize = 5,     
+  tables.theme = theme_cleantable() +
+    theme(axis.text.x = element_text(size = 15, color = "black"),  
+          axis.text.y = element_text(size = 15, color = "black"),
+          axis.title.y = element_text(size = 15, color = "black", face = "bold"), 
+          axis.title.x = element_text(size = 15, color = "black", face = "bold")),
+  
+  ggtheme = theme_bw()
+)
+
+print(km)
+
+tiff("plot/figure1e_KM.tiff",width = 7, height = 6, units = "in", res = 300)
+print(km)
+dev.off()
+
+```
+
+## 3.1.3 Missingness check
+```{r, include=FALSE, echo=FALSE}
+# filter the first 360 days data
+pro_360 <- pro %>%
+        filter(TIME <= 360)
+
+sum(is.na(pro_360$DV))/length(pro_360$DV) #23.8%
+
+pro_item <- pro_360 %>%
+      group_by(PROCTCAE) %>%
+      summarise(
+        Total = n(),
+        Missing = sum(is.na(DV)),
+        NA_percent = Missing/Total,
+      ) %>%
+      ungroup() %>%
+      mutate(pct = NA_percent * 100)
+
+# cut time into several windows (60 days as a window)
+breaks <- c(seq(0, 360, by = 60))
+win_labs <- as.character(seq(60, by = 60, length.out = length(breaks) - 1))
+
+pro.na <- pro_360 %>%
+      mutate(window = cut(TIME, breaks = breaks, include.lowest = TRUE, labels = win_labs)) %>%
+      group_by(PROCTCAE,window) %>%
+      summarise(
+        Total = n(),
+        Missing = sum(is.na(DV)),
+        NA_percent = Missing/Total,
+      ) %>%
+      ungroup() %>%
+      mutate(pct = NA_percent * 100) %>%
+      group_by(PROCTCAE) %>%
+      # for later plot setting
+      mutate(vjust_val = ifelse(row_number() %% 2 == 0, 1.2, -0.5)) %>%
+      ungroup()
+
+# rename the PROCTCAE to original names
+pro.na.plot <- pro.na %>%
+          mutate(PROCTCAE = case_when(
+          grepl(names(PRO_map)[1], PROCTCAE, ignore.case = TRUE) ~ PRO_map[1],
+          grepl(names(PRO_map)[2], PROCTCAE, ignore.case = TRUE) ~ PRO_map[2],
+          grepl(names(PRO_map)[3], PROCTCAE, ignore.case = TRUE) ~ PRO_map[3],
+          grepl(names(PRO_map)[4], PROCTCAE, ignore.case = TRUE) ~ PRO_map[4],
+          grepl(names(PRO_map)[5], PROCTCAE, ignore.case = TRUE) ~ PRO_map[5],
+          grepl(names(PRO_map)[6], PROCTCAE, ignore.case = TRUE) ~ PRO_map[6],
+          grepl(names(PRO_map)[7], PROCTCAE, ignore.case = TRUE) ~ PRO_map[7],
+          grepl(names(PRO_map)[8], PROCTCAE, ignore.case = TRUE) ~ PRO_map[8],
+          grepl(names(PRO_map)[9], PROCTCAE, ignore.case = TRUE) ~ PRO_map[9],
+          grepl(names(PRO_map)[10], PROCTCAE, ignore.case = TRUE) ~ PRO_map[10],
+          grepl(names(PRO_map)[11], PROCTCAE, ignore.case = TRUE) ~ PRO_map[11],
+          grepl(names(PRO_map)[12], PROCTCAE, ignore.case = TRUE) ~ PRO_map[12],
+          grepl(names(PRO_map)[13], PROCTCAE, ignore.case = TRUE) ~ PRO_map[13],
+          grepl(names(PRO_map)[14], PROCTCAE, ignore.case = TRUE) ~ PRO_map[14]
+          ))
+
+pro.na.plot <- pro.na.plot %>%
+  mutate(PROCTCAE = factor(PROCTCAE, levels = c("Activity", "Depression", "Appetite",
+                                              "Pain_frequency","Pain_severity","Pain_interference","Nausea_frequency",
+                                              "Nausea_severity","Vomit_frequency","Diarrhea_frequency","Constipation_severity",
+                                              "Dyspnea_severity","Dyspnea_interference","Insomnia_severity")))
+
+p2 <- ggplot(pro.na.plot, aes(x = window, y = pct, group = PROCTCAE)) +
+  geom_line(size = 1, color = "#1964B0", alpha = 1) +  
+  geom_point(size = 1.5, color = "#1964B0", alpha = 1) +  
+  geom_text(aes(label = sprintf("%.1f%%", NA_percent * 100), 
+                vjust = vjust_val), size = 4) +
+  facet_wrap(~PROCTCAE, ncol = 5) +  
+  scale_y_continuous(labels = function(x) paste0(x, "%"), 
+                     expand = expansion(mult = c(0, 0.15)),
+                     breaks = seq(0,100,20), limits = c(0,100)) +  
+  labs(
+    x = "Time (days)",
+    y = "Missing Percentage"
+  ) +
+  theme_bw() +
+  theme(
+    strip.text = element_text(face = "bold", size = 15),
+    strip.background = element_rect(fill = "lightgray"),
+    axis.text.x = element_text(color = "black",size = 15),
+    axis.text.y = element_text(color = "black",size = 15),
+    axis.title = element_text(size = 15, face = "bold")
+  )
+print(p2)
+
+ggsave("plot/supplement1b.tiff",
+       plot = p2,
+       width = 14,
+       height = 6,
+       units = "in",
+       dpi = 300)
+```
+
+## 3.1.4 PRO Score change over time
+```{r, include=FALSE, echo=FALSE}
+#--------------------------------------
+# Individual Symptom Score
+#--------------------------------------
+# remove missing rows and recalculate the first time (since the original first row may be removed) and TAFR
+no.missing <- pro %>%
+  filter(is.na(DV) == FALSE) %>%
+  group_by(PTID) %>%
+  mutate(FIRSTTIME = first(TIME)) %>%
+  mutate(TAFR = TIME - FIRSTTIME) %>%
+  ungroup() 
+
+# calculate the pro mean and sd for each window and generate the plots
+breaks2 <- c(seq(0, 360, by = 60), 400)     # 30 days as a window, last 40 days as a window
+win_labs2 <- c(seq(60, 360, by = 60), 400) # W01..W13
+
+pro.mean <- no.missing %>%
+  mutate(window = cut(TAFR, breaks = breaks2, include.lowest = TRUE, labels = win_labs2)) %>%
+  group_by(PROCTCAE, window) %>%
+  summarise(
+    count = n(),
+    mean = mean(DV, na.rm = TRUE),
+    sd = sd(DV, na.rm = TRUE),
+    se = sd/sqrt(count),
+    .groups = "drop"
+  )
+
+pro.mean <- pro.mean %>%
+  mutate(PROCTCAE = case_when(
+    grepl(names(PRO_map)[1], PROCTCAE, ignore.case = TRUE) ~ PRO_map[1],
+    grepl(names(PRO_map)[2], PROCTCAE, ignore.case = TRUE) ~ PRO_map[2],
+    grepl(names(PRO_map)[3], PROCTCAE, ignore.case = TRUE) ~ PRO_map[3],
+    grepl(names(PRO_map)[4], PROCTCAE, ignore.case = TRUE) ~ PRO_map[4],
+    grepl(names(PRO_map)[5], PROCTCAE, ignore.case = TRUE) ~ PRO_map[5],
+    grepl(names(PRO_map)[6], PROCTCAE, ignore.case = TRUE) ~ PRO_map[6],
+    grepl(names(PRO_map)[7], PROCTCAE, ignore.case = TRUE) ~ PRO_map[7],
+    grepl(names(PRO_map)[8], PROCTCAE, ignore.case = TRUE) ~ PRO_map[8],
+    grepl(names(PRO_map)[9], PROCTCAE, ignore.case = TRUE) ~ PRO_map[9],
+    grepl(names(PRO_map)[10], PROCTCAE, ignore.case = TRUE) ~ PRO_map[10],
+    grepl(names(PRO_map)[11], PROCTCAE, ignore.case = TRUE) ~ PRO_map[11],
+    grepl(names(PRO_map)[12], PROCTCAE, ignore.case = TRUE) ~ PRO_map[12],
+    grepl(names(PRO_map)[13], PROCTCAE, ignore.case = TRUE) ~ PRO_map[13],
+    grepl(names(PRO_map)[14], PROCTCAE, ignore.case = TRUE) ~ PRO_map[14]
+  ))
+
+pro.mean <- pro.mean %>%
+            mutate(PROCTCAE = factor(PROCTCAE, levels = c("Activity", "Depression", "Appetite",
+                              "Pain_frequency","Pain_severity","Pain_interference","Nausea_frequency",
+                              "Nausea_severity","Vomit_frequency","Diarrhea_frequency","Constipation_severity",
+                              "Dyspnea_severity","Dyspnea_interference","Insomnia_severity")))
+
+
+p3 <- ggplot(pro.mean, aes(x = window, y = mean)) +
+  geom_line(aes(group = 1), size = 1,color = "#1964B0") +
+  geom_point(size = 1,color = "#1964B0") +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd),width = 0.3,linewidth = 1,color = "#1964B0") +
+  #scale_fill_jco() +
+  facet_wrap(~PROCTCAE, ncol = 5) +
+  scale_y_continuous(breaks = seq(-1,3,1), limits = c(-1,3)) +
+  labs(
+    x = "Time (days)",
+    y = "Score (mean ± SD)"
+  ) +
+  theme_bw() +
+  theme(
+    strip.text = element_text(face = "bold", size = 15),
+    axis.text.x = element_text(color = "black",size = 15, hjust = 0.5),
+    axis.text.y = element_text(color = "black",size = 15),
+    strip.background = element_rect(fill = "lightgray"),
+    axis.title = element_text(size = 15, face = "bold")
+  )
+
+print(p3)
+
+ggsave("plot/figure1b.tiff",
+       plot = p3,
+       width = 16,
+       height = 6,
+       units = "in",
+       dpi = 300)
+
+```
+
+## 3.1.5 demographic table
+```{r, include=FALSE, echo=FALSE}
+
+#--------------------------------------
+# Demographic Table
+#--------------------------------------
+# convert some variables and regroup the IV and PO treatment
+no.missing <- no.missing %>%
+        mutate(DEATH = case_when(is.na(DEATH) ~ "0",TRUE ~ "1")) %>%
+        # regroup the IV and PO treatment groups 
+        mutate(REGIMEN_IV = case_when(    
+         grepl("Chemotherapy only",REGIMEN_IV,ignore.case = TRUE) ~ "1",
+         grepl("Targeted only",REGIMEN_IV,ignore.case = TRUE) ~ "2",
+         grepl("Immunotherapy only",REGIMEN_IV,ignore.case = TRUE) ~ "3",
+         REGIMEN_IV %in% c("Chemo_Targeted","three combine","Chemo_Immunotherapy",
+                      "Immuno_Targeted") ~ "4",
+         TRUE ~"5")) %>%
+  
+        mutate(REGIMEN_PO = case_when(
+         grepl("TKI",REGIMEN_PO,ignore.case = TRUE) ~ "1",
+         TRUE ~"2")) %>%
+  
+        mutate(across(c(GENDER, ETHNICITY, RACE, CANCERTYPE, ECOG,REGIMEN_IV, REGIMEN_PO, C12_DOSE_REDUCTION,
+                DISCONTINUE,PROCTCAE, VAR, ER, HOSPITAL,REGIMEN_IV,REGIMEN_PO),as.factor)) %>%
+        select(-CONSENT_DT) %>%
+
+        rename(SEX = GENDER, IV = REGIMEN_IV, PO = REGIMEN_PO, SURVIVAL_TIME = DEATH.DATE) %>%
+        select(PTID,PROCTCAE,VAR,TIME,TAFR,DV,DV2,MDV,ER,HOSPITAL,C12_DOSE_REDUCTION,DISCONTINUE,DEATH,SURVIVAL_TIME,
+               everything())
+
+demo.table <- no.missing %>%
+  group_by(PTID) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(AGE,SEX,ETHNICITY,RACE,HEIGHT,CANCERTYPE,ECOG,IV,PO) %>%
+  tbl_summary(
+    statistic = list(
+      all_continuous() ~ "{median} ({min}, {max})",  
+      all_categorical() ~ "{n} ({p}%)"              
+    ),
+    digits = list(
+      all_continuous() ~ 1,
+      all_categorical() ~ 1
+    )
+  ) %>%
+  modify_header(label ~ "**Variable**", stat_0 ~ "**Summary (N = {N})**")
+
+print(demo.table)
+
+```
+
+## 3.1.6 multivariable logistic regression
+### 3.1.6.1 Regroup the variables
+```{r, include=FALSE, echo=FALSE}
+# Selected covariate: sex,race,cancer type,ecog,iv and po treatment
+demo.clean <- no.missing %>%
+          group_by(PTID) %>%
+          # one row for each patient
+          slice(1) %>%
+          ungroup() %>%
+  # combine Asian,native Hawaiian,Multiple Races Selected and NA to others.
+        mutate(RACE = factor(case_when(
+          RACE == 1|RACE == 2 | RACE == 4 | RACE == 99 | is.na(RACE) ~ "Other",
+          RACE == 3 ~ "Black",
+          RACE == 5 ~ "White"),levels = c("White", "Black", "Other"))) %>%
+  # rename sex to male and female
+        mutate(SEX = factor(if_else(SEX == 1, "Male", "Female"))) %>%
+  # combine ECOG 2 and 3 together
+        mutate(ECOG = factor(if_else(ECOG == "3", "2", as.character(ECOG)))) %>%
+  # rename cancer type
+        mutate(CANCERTYPE = factor(case_when(
+                CANCERTYPE == 1 ~ "Thoracic",
+                CANCERTYPE == 2 ~ "Breast",
+        #(Colorectal/Anal,Gastro-esophageal,Small bowel and 'Pancreas, Hepatobiliary)
+                CANCERTYPE %in% c(3,9,10) ~ "Gastrointestinal", 
+                CANCERTYPE %in% c(4,8) ~ "Genitourinary",
+                CANCERTYPE == 5 ~ "Gynecologic",
+                CANCERTYPE %in% c(6,7,99) ~ "Other tumors")),
+                CANCERTYPE = relevel(CANCERTYPE, ref = "Thoracic")) %>%
+  # rename IV treatment
+        mutate(IV = factor(case_when(
+          IV == 1 ~ "Chemo",
+          IV == 2 ~ "Target",
+          IV == 3 ~ "Immuno",
+          IV == 4 ~ "Combination",
+          IV == 5 ~ "None or Unclassified")),
+          IV = relevel(IV, ref = "Chemo")) %>%
+  # rename PO treatment
+        mutate(PO = factor(case_when(
+          PO == 1 ~ "TKI",
+          PO == 2 ~ "None or Unclassified")),
+          PO = relevel(PO, ref = "None or Unclassified"))
+
+```
+
+### 3.1.6.2 Dose reduction forest plot
+```{r, include=FALSE, echo=FALSE}
+logis.red <- glm(C12_DOSE_REDUCTION ~ SEX + RACE + CANCERTYPE + ECOG + IV + PO,
+             data = demo.clean,
+             family = binomial)
+
+summary(logis.red)
+
+result.red <- tidy(logis.red, conf.int = TRUE, exponentiate = TRUE) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    OR = estimate,
+    CI_lower = conf.low,
+    CI_upper = conf.high,
+    OR_CI = sprintf("%.2f (%.2f-%.2f)", OR, CI_lower, CI_upper),
+    p_formatted = case_when(
+      p.value < 0.001 ~ "<0.001",
+      p.value < 0.01 ~ sprintf("%.3f", p.value),
+      TRUE ~ sprintf("%.2f", p.value)
+    ),
+    sig_mark = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01 ~ "**",
+      p.value < 0.05 ~ "*",
+      TRUE ~ ""
+    ),
+    Variable = case_when(
+      grepl("SEX", term) ~ paste0("Sex: ", gsub("SEX", "", term), " vs. Female"),
+      grepl("RACE", term) ~ paste0("Race: ", gsub("RACE", "", term), " vs. White"),
+      grepl("CANCERTYPE", term) ~ paste0("Cancer: ", gsub("CANCERTYPE", "", term), " vs. Thoracic"),
+      grepl("ECOG", term) ~ paste0("ECOG: ", ifelse(gsub("ECOG", "", term) == "2", "2/3", gsub("ECOG", "", term)), " vs. ECOG 0"),
+      grepl("IV", term) ~ paste0("IV: ", gsub("IV", "", term), " vs. Chemo"),
+      grepl("PO", term) ~ paste0("PO: ", gsub("PO", "", term), " vs. None or Unclassified"),
+      TRUE ~ term
+    )
+  )
+
+# Make Forest plot
+tabletext <- cbind(
+  c("Variable", result.red$Variable),
+  c("OR (95% CI)", result.red$OR_CI),
+  c("P Value", paste0(result.red$p_formatted, result.red$sig_mark))
+)
+
+tiff("plot/supplement2a.tiff", 
+     width = 6, height = 4.3, units = "in", res = 300)
+
+forestplot(
+  labeltext = tabletext,
+  mean = c(NA, result.red$OR),
+  lower = c(NA, result.red$CI_lower),
+  upper = c(NA, result.red$CI_upper),
+  is.summary = c(TRUE, rep(FALSE, nrow(result.red))),
+  align = c("l", "l", "c"),
+
+  # X-axis format
+  xlog = TRUE,
+  xticks = c(0.1,1,10),
+  xticks.digits = 1,
+  xlab = "Odds Ratio (OR)",
+  
+  # Color
+  col = fpColors(
+    box = "black",
+    line = "black" ,
+    zero = "grey50"),
+  
+  # Line and Point format
+  lwd.xaxis = 1.5,
+  lwd.ci = 1.5,
+  lwd.zero = 1, #OR = 1 line
+  boxsize = 0.25,
+  vertices = TRUE,
+  
+  # Font Format
+  txt_gp = fpTxtGp(
+    label = gpar(fontsize = 10),
+    ticks = gpar(fontsize = 20),
+    xlab = gpar(fontsize = 16,fontface = "bold"),
+    title = gpar(
+      fontsize = 13,           
+      fontface = "bold",   
+      lineheight = 10)),
+  
+  # Layout setting
+  graphwidth = unit(1.5, "inches"),
+  colgap = unit(2, "mm"),
+  lineheight = unit(6, "mm")
+)
+
+grid::grid.text(
+  "* P < 0.05, ** P < 0.01, *** P < 0.001", 
+  x = 0.2, y = 0.08, 
+  gp = gpar(cex = 0.7, fontface = "italic")
+)
+
+dev.off()
+
+
+```
+### 3.1.6.3 ER Visit forest plot
+```{r, include=FALSE, echo=FALSE}
+logis.er <- glm(ER ~ SEX + RACE + CANCERTYPE + ECOG + IV + PO,
+                 data = demo.clean,
+                 family = binomial)
+
+summary(logis.er)
+
+result.er <- tidy(logis.er, conf.int = TRUE, exponentiate = TRUE) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    OR = estimate,
+    CI_lower = conf.low,
+    CI_upper = conf.high,
+    OR_CI = sprintf("%.2f (%.2f-%.2f)", OR, CI_lower, CI_upper),
+    p_formatted = case_when(
+      p.value < 0.001 ~ "<0.001",
+      p.value < 0.01 ~ sprintf("%.3f", p.value),
+      TRUE ~ sprintf("%.2f", p.value)
+    ),
+    sig_mark = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01 ~ "**",
+      p.value < 0.05 ~ "*",
+      TRUE ~ ""
+    ),
+    Variable = case_when(
+      grepl("SEX", term) ~ paste0("Sex: ", gsub("SEX", "", term), " vs. Female"),
+      grepl("RACE", term) ~ paste0("Race: ", gsub("RACE", "", term), " vs. White"),
+      grepl("CANCERTYPE", term) ~ paste0("Cancer: ", gsub("CANCERTYPE", "", term), " vs. Thoracic"),
+      grepl("ECOG", term) ~ paste0("ECOG: ", ifelse(gsub("ECOG", "", term) == "2", "2/3", gsub("ECOG", "", term)), " vs. ECOG 0"),
+      grepl("IV", term) ~ paste0("IV: ", gsub("IV", "", term), " vs. Chemo"),
+      grepl("PO", term) ~ paste0("PO: ", gsub("PO", "", term), " vs. None or Unclassified"),
+      TRUE ~ term
+    )
+  )
+
+# Make Forest plot
+tabletext <- cbind(
+  c("Variable", result.er$Variable),
+  c("OR (95% CI)", result.er$OR_CI),
+  c("P Value", paste0(result.er$p_formatted, result.er$sig_mark))
+)
+
+tiff("plot/supplement2b.tiff", 
+     width = 6, height = 4.3, units = "in", res = 300)
+
+forestplot(
+  labeltext = tabletext,
+  mean = c(NA, result.er$OR),
+  lower = c(NA, result.er$CI_lower),
+  upper = c(NA, result.er$CI_upper),
+  is.summary = c(TRUE, rep(FALSE, nrow(result.er))),
+  align = c("l","l","c"),
+
+  # X-axis format
+  xlog = TRUE,
+  xticks = c(0.1,1,10),
+  xticks.digits = 1,
+  xlab = "Odds Ratio (OR)",
+  
+  # Color
+  col = fpColors(
+    box = "black",
+    line = "black" ,
+    zero = "grey50"),
+  
+  # Line and Point format
+  lwd.xaxis = 1.5,
+  lwd.ci = 1.5,
+  lwd.zero = 1, #OR = 1 line
+  boxsize = 0.25,
+  vertices = TRUE,
+  
+  # Font Format
+  txt_gp = fpTxtGp(
+    label = gpar(fontsize = 10),
+    ticks = gpar(fontsize = 20),
+    xlab = gpar(fontsize = 16,fontface = "bold"),
+    title = gpar(
+      fontsize = 13,           
+      fontface = "bold",   
+      lineheight = 10)),
+  
+  # Layout setting
+  graphwidth = unit(1.5, "inches"),
+  colgap = unit(2, "mm"),
+  lineheight = unit(6, "mm")
+)
+
+grid::grid.text(
+  "* P < 0.05, ** P < 0.01, *** P < 0.001", 
+  x = 0.2, y = 0.08, 
+  gp = gpar(cex = 0.7, fontface = "italic")
+)
+
+dev.off()
+
+```
+### 3.1.6.4 Dose discontinuation forest plot
+```{r, include=FALSE, echo=FALSE}
+logis.dis <- glm(DISCONTINUE ~ SEX + RACE + CANCERTYPE + ECOG + IV + PO,
+                data = demo.clean,
+                family = binomial)
+
+summary(logis.dis)
+
+result.dis <- tidy(logis.dis, conf.int = TRUE, exponentiate = TRUE) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    OR = estimate,
+    CI_lower = conf.low,
+    CI_upper = conf.high,
+    OR_CI = sprintf("%.2f (%.2f-%.2f)", OR, CI_lower, CI_upper),
+    p_formatted = case_when(
+      p.value < 0.001 ~ "<0.001",
+      p.value < 0.01 ~ sprintf("%.3f", p.value),
+      TRUE ~ sprintf("%.2f", p.value)
+    ),
+    sig_mark = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01 ~ "**",
+      p.value < 0.05 ~ "*",
+      TRUE ~ ""
+    ),
+    Variable = case_when(
+      grepl("SEX", term) ~ paste0("Sex: ", gsub("SEX", "", term), " vs. Female"),
+      grepl("RACE", term) ~ paste0("Race: ", gsub("RACE", "", term), " vs. White"),
+      grepl("CANCERTYPE", term) ~ paste0("Cancer: ", gsub("CANCERTYPE", "", term), " vs. Thoracic"),
+      grepl("ECOG", term) ~ paste0("ECOG: ", ifelse(gsub("ECOG", "", term) == "2", "2/3", gsub("ECOG", "", term)), " vs. ECOG 0"),
+      grepl("IV", term) ~ paste0("IV: ", gsub("IV", "", term), " vs. Chemo"),
+      grepl("PO", term) ~ paste0("PO: ", gsub("PO", "", term), " vs. None or Unclassified"),
+      TRUE ~ term
+    )
+  )
+
+# Make Forest plot
+tabletext <- cbind(
+  c("Variable", result.dis$Variable),
+  c("OR (95% CI)", result.dis$OR_CI),
+  c("P Value", paste0(result.dis$p_formatted,result.dis$sig_mark))
+)
+
+tiff("plot/supplement2c.tiff", 
+     width = 6, height = 4.3, units = "in", res = 300)
+
+forestplot(
+  labeltext = tabletext,
+  mean = c(NA, result.dis$OR),
+  lower = c(NA, result.dis$CI_lower),
+  upper = c(NA, result.dis$CI_upper),
+  is.summary = c(TRUE, rep(FALSE, nrow(result.dis))),
+  align = c("l","l","c"),
+  
+  # X-axis format
+  xlog = TRUE,
+  xticks = c(0.1,1,10),
+  xticks.digits = 1,
+  xlab = "Odds Ratio (OR)",
+  
+  # Color
+  col = fpColors(
+    box = "black",
+    line = "black" ,
+    zero = "grey50"),
+  
+  # Line and Point format
+  lwd.xaxis = 1.5,
+  lwd.ci = 1.5,
+  lwd.zero = 1, #OR = 1 line
+  boxsize = 0.25,
+  vertices = TRUE,
+  
+  # Font Format
+  txt_gp = fpTxtGp(
+    label = gpar(fontsize = 10),
+    ticks = gpar(fontsize = 20),
+    xlab = gpar(fontsize = 16,fontface = "bold"),
+    title = gpar(
+      fontsize = 13,           
+      fontface = "bold",   
+      lineheight = 10)),
+  
+  # Layout setting
+  graphwidth = unit(1.5, "inches"),
+  colgap = unit(2, "mm"),
+  lineheight = unit(6, "mm")
+)
+
+grid::grid.text(
+  "* P < 0.05, ** P < 0.01, *** P < 0.001", 
+  x = 0.2, y = 0.08, 
+  gp = gpar(cex = 0.7, fontface = "italic")
+)
+
+dev.off()
+
+```
+
+### 3.1.6.5 Hospitalization forest plot
+```{r, include=FALSE, echo=FALSE}
+logis.hos <- glm(HOSPITAL ~ SEX + RACE + CANCERTYPE + ECOG + IV + PO,
+                 data = demo.clean,
+                 family = binomial)
+
+summary(logis.hos)
+
+result.hos <- tidy(logis.hos, conf.int = TRUE, exponentiate = TRUE) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    OR = estimate,
+    CI_lower = conf.low,
+    CI_upper = conf.high,
+    OR_CI = sprintf("%.2f (%.2f-%.2f)", OR, CI_lower, CI_upper),
+    p_formatted = case_when(
+      p.value < 0.001 ~ "<0.001",
+      p.value < 0.01 ~ sprintf("%.3f", p.value),
+      TRUE ~ sprintf("%.2f", p.value)
+    ),
+    sig_mark = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01 ~ "**",
+      p.value < 0.05 ~ "*",
+      TRUE ~ ""
+    ),
+    Variable = case_when(
+      grepl("SEX", term) ~ paste0("Sex: ", gsub("SEX", "", term), " vs. Female"),
+      grepl("RACE", term) ~ paste0("Race: ", gsub("RACE", "", term), " vs. White"),
+      grepl("CANCERTYPE", term) ~ paste0("Cancer: ", gsub("CANCERTYPE", "", term), " vs. Thoracic"),
+      grepl("ECOG", term) ~ paste0("ECOG: ", ifelse(gsub("ECOG", "", term) == "2", "2/3", gsub("ECOG", "", term)), " vs. ECOG 0"),
+      grepl("IV", term) ~ paste0("IV: ", gsub("IV", "", term), " vs. Chemo"),
+      grepl("PO", term) ~ paste0("PO: ", gsub("PO", "", term), " vs. None or Unclassified"),
+      TRUE ~ term
+    )
+  )
+
+# Make Forest plot
+tabletext <- cbind(
+  c("Variable", result.hos$Variable),
+  c("OR (95% CI)", result.hos$OR_CI),
+  c("P Value", paste0(result.hos$p_formatted,result.hos$sig_mark))
+)
+
+tiff("plot/supplement2d.tiff", 
+     width = 6, height = 4.3, units = "in", res = 300)
+
+forestplot(
+  labeltext = tabletext,
+  mean = c(NA, result.hos$OR),
+  lower = c(NA, result.hos$CI_lower),
+  upper = c(NA, result.hos$CI_upper),
+  is.summary = c(TRUE, rep(FALSE, nrow(result.hos))),
+  align = c("l","l","c"),
+  
+  # X-axis format
+  xlog = TRUE,
+  xticks = c(0.1,1,10),
+  xticks.digits = 1,
+  xlab = "Odds Ratio (OR)",
+  
+  # Color
+  col = fpColors(
+    box = "black",
+    line = "black" ,
+    zero = "grey50"),
+  
+  # Line and Point format
+  lwd.xaxis = 1.5,
+  lwd.ci = 1.5,
+  lwd.zero = 1, #OR = 1 line
+  boxsize = 0.25,
+  vertices = TRUE,
+  
+  # Font Format
+  txt_gp = fpTxtGp(
+    label = gpar(fontsize = 10),
+    ticks = gpar(fontsize = 20),
+    xlab = gpar(fontsize = 16,fontface = "bold"),
+    title = gpar(
+      fontsize = 13,           
+      fontface = "bold",   
+      lineheight = 10)),
+  
+  # Layout setting
+  graphwidth = unit(1.5, "inches"),
+  colgap = unit(2, "mm"),
+  lineheight = unit(6, "mm")
+)
+
+grid::grid.text(
+  "* P < 0.05, ** P < 0.01, *** P < 0.001", 
+  x = 0.2, y = 0.08, 
+  gp = gpar(cex = 0.7, fontface = "italic")
+)
+
+dev.off()
+
+```
+
+### 3.1.6.6 Surival forest plot (Cox model)
+```{r, include=FALSE, echo=FALSE}
+
+cox_os <- coxph(
+  Surv(SURVIVAL_TIME, as.numeric(as.character(DEATH))) ~ SEX + RACE + CANCERTYPE + ECOG + IV + PO ,
+  data = demo.clean
+)
+
+summary(cox_os) 
+
+cox_test <- cox.zph(cox_os)
+cox_test # check assumptions for proportional hazard
+
+result.death <- tidy(cox_os, conf.int = TRUE, exponentiate = TRUE) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    HR = estimate,
+    CI_lower = conf.low,
+    CI_upper = conf.high,
+    HR_CI = sprintf("%.2f (%.2f-%.2f)", HR, CI_lower, CI_upper),
+    p_formatted = case_when(
+      p.value < 0.001 ~ "<0.001",
+      p.value < 0.01 ~ sprintf("%.3f", p.value),
+      TRUE ~ sprintf("%.2f", p.value)
+    ),
+    sig_mark = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01 ~ "**",
+      p.value < 0.05 ~ "*",
+      TRUE ~ ""
+    ),
+    Variable = case_when(
+      grepl("SEX", term) ~ paste0("Sex: ", gsub("SEX", "", term), " vs. Female"),
+      grepl("RACE", term) ~ paste0("Race: ", gsub("RACE", "", term), " vs. White"),
+      grepl("CANCERTYPE", term) ~ paste0("Cancer: ", gsub("CANCERTYPE", "", term), " vs. Thoracic"),
+      grepl("ECOG", term) ~ paste0("ECOG: ", ifelse(gsub("ECOG", "", term) == "2", "2/3", gsub("ECOG", "", term)), " vs. ECOG 0"),
+      grepl("IV", term) ~ paste0("IV: ", gsub("IV", "", term), " vs. Chemo"),
+      grepl("PO", term) ~ paste0("PO: ", gsub("PO", "", term), " vs. None or Unclassified"),
+      TRUE ~ term
+    )
+  )
+
+# Make Forest plot
+tabletext <- cbind(
+  c("Variable", result.death$Variable),
+  c("HR (95% CI)", result.death$HR_CI),
+  c("P Value", paste0(result.death$p_formatted,result.death$sig_mark))
+)
+
+tiff("plot/figure1a.tiff", 
+     width = 6.2, height = 4.3, units = "in", res = 300)
+
+forestplot(
+  labeltext = tabletext,
+  mean = c(NA, result.death$HR),
+  lower = c(NA, result.death$CI_lower),
+  upper = c(NA, result.death$CI_upper),
+  is.summary = c(TRUE, rep(FALSE, nrow(result.death))),
+  align = c("l","l","c"),
+  #title = "Multivariable Cox Regression - Overall Survival",
+  
+  # X-axis format
+  xlog = TRUE,
+  xticks = c(0.1,1,10),
+  xlab = "Hazard Ratio (HR)",
+  
+  # Color
+  col = fpColors(
+    box = "black",
+    line = "black" ,
+    zero = "grey50"),
+  
+  # Line and Point format
+  lwd.xaxis = 1.5,
+  lwd.ci = 1.5,
+  lwd.zero = 1, #OR = 1 line
+  boxsize = 0.25,
+  vertices = TRUE,
+  
+  # Font Format
+  txt_gp = fpTxtGp(
+    label = gpar(fontsize = 11),
+    ticks = gpar(fontsize = 20),
+    xlab = gpar(fontsize = 16,fontface = "bold"),
+    title = gpar(
+      fontsize = 13,           
+      fontface = "bold",   
+      lineheight = 10)),
+  
+  # Layout setting
+  graphwidth = unit(1.5, "inches"),
+  colgap = unit(2, "mm"),
+  lineheight = unit(6, "mm")
+)
+
+grid::grid.text(
+  "* P < 0.05, ** P < 0.01, *** P < 0.001", 
+  x = 0.2, y = 0.08, 
+  gp = gpar(cex = 0.7, fontface = "italic")
+)
+
+dev.off()
+
+```
+
+## 3.1.7 Random split into 80/20 training and testing cohorts
+
+```{r, include=FALSE, echo=FALSE}
+set.seed(123)
+PTID <- unique(no.missing$PTID)
+train_id <- sample(PTID, size = floor(0.8 * length(PTID)))
+vali_id <- PTID[!PTID %in% train_id]
+
+#--------------------------------------
+# IRT Model
+#--------------------------------------
+train_data <- no.missing[no.missing$PTID %in% train_id, ]
+test_data  <- no.missing[!no.missing$PTID %in% train_id, ]
+
+train_base <- train_data %>%
+            filter(TAFR == 0)
+
+#--------------------------------------
+# PRO total model
+#--------------------------------------
+# This model doesnt need to combine level 3 and level 4 but need further imputation on missing data
+pro_beta <- read.csv(here("data","fulldata_IRT.csv")) %>%
+            # re-code the binary outcome variable
+            mutate(DISCONTINUE = case_when(is.na(DISCONTINUE) ~ "0",TRUE ~ "1")) %>%
+            mutate(DEATH = case_when(is.na(DEATH) ~ "0",TRUE ~ "1")) %>%
+        # regroup the IV and PO treatment groups same as IRT
+        mutate(REGIMEN_IV = case_when(    
+         grepl("Chemotherapy only",REGIMEN_IV,ignore.case = TRUE) ~ "1",
+         grepl("Targeted only",REGIMEN_IV,ignore.case = TRUE) ~ "2",
+         grepl("Immunotherapy only",REGIMEN_IV,ignore.case = TRUE) ~ "3",
+         REGIMEN_IV %in% c("Chemo_Targeted","three combine","Chemo_Immunotherapy",
+                      "Immuno_Targeted") ~ "4",
+         TRUE ~"5")) %>%
+  
+        mutate(REGIMEN_PO = case_when(
+         grepl("TKI",REGIMEN_PO,ignore.case = TRUE) ~ "1",
+         TRUE ~"2")) %>%
+  
+        mutate(across(c(GENDER, ETHNICITY, RACE, CANCERTYPE, ECOG,REGIMEN_IV, REGIMEN_PO, C12_DOSE_REDUCTION,
+                DISCONTINUE,PROCTCAE, VAR, ER, HOSPITAL,REGIMEN_IV,REGIMEN_PO),as.factor)) %>%
+        select(-CONSENT_DT) %>%
+        rename(SEX = GENDER, IV = REGIMEN_IV, PO = REGIMEN_PO, SURVIVAL_TIME = DEATH.DATE) %>%
+        select(PTID,PROCTCAE,VAR,TIME,TAFR,DV,MDV,ER,HOSPITAL,C12_DOSE_REDUCTION,DISCONTINUE,DEATH,SURVIVAL_TIME,
+               everything())
+
+train_data_total <- pro_beta %>% filter(PTID %in% train_id)
+test_data_total  <- pro_beta %>% filter(PTID %in% vali_id)
+
+```
+
+## 3.1.8 Export the datasets for IRT and PRO_total model (needs further imputation on missing data and data exploratory)
+IRT dataset are ready for monolix code, but 
+
+```{r, include=FALSE, echo=FALSE}
+# Export the datasets for IRT and PRO total model
+# IRT model - use the data frame without missing data
+#write.csv(train_data, "full_IRT_training.csv", row.names = FALSE)
+#write.csv(train_base, "base_IRT_training.csv", row.names = FALSE)
+#write.csv(test_data, "full_IRT_testing.csv", row.names = FALSE)
+
+# PRO total model - use the data frame with missing data (further imputation in other file)  
+#write.csv(train_data_total, "pro_missing_train.csv", row.names = FALSE)
+#write.csv(test_data_total, "pro_missing_test.csv", row.names = FALSE)  
+```
+
+
+

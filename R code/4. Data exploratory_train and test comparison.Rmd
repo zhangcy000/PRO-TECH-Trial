@@ -1,0 +1,299 @@
+---
+title: "Data exploratory - compare training and testing cohorts"
+author: "Congyu Zhang"
+output: html_document
+---
+# 1. Load packages and set up environment
+
+```{r setup, include=FALSE, echo=FALSE}
+rm(list=ls())
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gt)
+library(gtsummary)
+library(here)
+library(psych)
+library(lavaan)
+
+```
+
+# 2. Import the raw data 
+
+```{r, echo=FALSE}
+# IRT Model
+train_irt <- read.csv(here("data","IRT_data","full_IRT_training.csv"))
+validation_irt <- read.csv(here("data","IRT_data","full_IRT_testing.csv"))
+
+base <- read.csv(here("data","IRT_data","base_IRT_training.csv"))
+
+pain <- base %>%
+  filter(VAR %in% c(4,5,6))
+
+gi <- base %>%
+  filter(VAR %in% c(3,7,8,9,10,11))
+
+write.csv(pain, here("data", "pain_base.csv"))
+write.csv(gi, here("data", "gi_base.csv"))
+
+#PRO total model
+train_total <- read.csv(here("data","PROtotal_data","pro_missing_train.csv"))
+validation_total <- read.csv(here("data","PROtotal_data","pro_missing_test.csv"))
+
+```
+
+# 3.1. Data exploratory
+
+## 3.1.1 Demographic table
+
+Missing covariates:
+training cohort: 1 ethnicity and 5 race
+testing cohort: no missing
+```{r, echo=FALSE}
+#--------------------------------------
+# Training Cohort
+#--------------------------------------
+demo.train <- train_irt %>%
+  group_by(PTID) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(AGE,SEX,ETHNICITY,RACE,HEIGHT,CANCERTYPE,ECOG,IV,PO) %>%
+  tbl_summary(
+    statistic = list(
+      all_continuous() ~ "{median} ({min}, {max})",  
+      all_categorical() ~ "{n} ({p}%)"              
+    ),
+    digits = list(
+      all_continuous() ~ 1,
+      all_categorical() ~ 1
+    )
+  ) %>%
+  modify_header(label ~ "**Variable**", stat_0 ~ "**Summary (N = {N})**")
+print(demo.train)
+
+demo.vali <- validation_irt %>%
+  group_by(PTID) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(AGE,SEX,ETHNICITY,RACE,HEIGHT,CANCERTYPE,ECOG,IV,PO) %>%
+  tbl_summary(
+    statistic = list(
+      all_continuous() ~ "{median} ({min}, {max})",  
+      all_categorical() ~ "{n} ({p}%)"              
+    ),
+    digits = list(
+      all_continuous() ~ 1,
+      all_categorical() ~ 1
+    )
+  ) %>%
+  modify_header(label ~ "**Variable**", stat_0 ~ "**Summary (N = {N})**")
+print(demo.vali)
+
+
+```
+
+## 3.1.2 Time to Event data analysis
+
+```{r, include=FALSE, echo=FALSE}
+#--------------------------------------
+# Training Cohort
+#--------------------------------------
+train_tte <- train_irt %>%
+            distinct(PTID,.keep_all = TRUE)
+
+table(train_tte$DEATH)
+table(train_tte$C12_DOSE_REDUCTION)
+table(train_tte$ER)
+table(train_tte$HOSPITAL)
+table(train_tte$DISCONTINUE)
+
+#--------------------------------------
+# Testing Cohort
+#--------------------------------------
+validation_tte <- validation_irt %>%
+            distinct(PTID,.keep_all = TRUE)
+
+table(validation_tte$DEATH)
+table(validation_tte$C12_DOSE_REDUCTION)
+table(validation_tte$ER)
+table(validation_tte$HOSPITAL)
+table(validation_tte$DISCONTINUE)
+
+```
+
+## 3.1.3 PRO correlation analysis
+
+```{r, include=FALSE, echo=FALSE}
+#--------------------------------------
+# Find the correlation between each PRO item
+#--------------------------------------
+full_irt <- train_irt %>%
+            rbind(validation_irt)
+
+PRO_map <- c(PROCTCAE_001 = "Activity",PROCTCAE_002 = "Depression",PROCTCAE_003 = "Appetite",
+             PROCTCAE_004 = "Pain_frequency",PROCTCAE_005 = "Pain_severity",PROCTCAE_006 = "Pain_interference",
+             PROCTCAE_007 = "Nausea_frequency",PROCTCAE_008 = "Nausea_severity",PROCTCAE_009 = "Vomit_frequency",
+             PROCTCAE_010 = "Diarrhea_frequency",PROCTCAE_011 = "Constipation_severity",PROCTCAE_012 = "Dyspnea_severity",
+             PROCTCAE_013 = "Dyspnea_interference", PROCTCAE_014 = "Insomnia_severity")
+
+full_irt <- full_irt %>%
+    mutate(PROCTCAE = case_when(
+    grepl(names(PRO_map)[1], PROCTCAE, ignore.case = TRUE) ~ PRO_map[1],
+    grepl(names(PRO_map)[2], PROCTCAE, ignore.case = TRUE) ~ PRO_map[2],
+    grepl(names(PRO_map)[3], PROCTCAE, ignore.case = TRUE) ~ PRO_map[3],
+    grepl(names(PRO_map)[4], PROCTCAE, ignore.case = TRUE) ~ PRO_map[4],
+    grepl(names(PRO_map)[5], PROCTCAE, ignore.case = TRUE) ~ PRO_map[5],
+    grepl(names(PRO_map)[6], PROCTCAE, ignore.case = TRUE) ~ PRO_map[6],
+    grepl(names(PRO_map)[7], PROCTCAE, ignore.case = TRUE) ~ PRO_map[7],
+    grepl(names(PRO_map)[8], PROCTCAE, ignore.case = TRUE) ~ PRO_map[8],
+    grepl(names(PRO_map)[9], PROCTCAE, ignore.case = TRUE) ~ PRO_map[9],
+    grepl(names(PRO_map)[10], PROCTCAE, ignore.case = TRUE) ~ PRO_map[10],
+    grepl(names(PRO_map)[11], PROCTCAE, ignore.case = TRUE) ~ PRO_map[11],
+    grepl(names(PRO_map)[12], PROCTCAE, ignore.case = TRUE) ~ PRO_map[12],
+    grepl(names(PRO_map)[13], PROCTCAE, ignore.case = TRUE) ~ PRO_map[13],
+    grepl(names(PRO_map)[14], PROCTCAE, ignore.case = TRUE) ~ PRO_map[14]
+  ))
+  
+#--------------------------------------
+# 1. Based on baseline PRO score
+#--------------------------------------
+# Step 1: Wide format (PTID x PROCTCAE)
+full_irt_base <- full_irt %>%
+          filter(TAFR == 0)
+
+full_irt_base %>%
+  group_by(PROCTCAE) %>%
+  summarise(n = n_distinct(PTID))
+
+irt_base_wide <- full_irt_base %>%
+  select(PTID, PROCTCAE, DV) %>%
+  pivot_wider(names_from = PROCTCAE, values_from = DV) %>%
+  select(-PTID)
+
+# Items of interest
+items_subset <- irt_base_wide %>%
+  select(Pain_frequency, Pain_severity, Pain_interference,
+         Activity, Depression, Insomnia_severity,
+         Dyspnea_severity, Dyspnea_interference,Appetite)
+
+# Polychoric correlation matrix
+poly_sub <- polychoric(items_subset)
+poly_matrix_sub <- poly_sub$rho
+
+# Parallel Analysis -> determine number of factors
+fa.parallel(poly_matrix_sub, n.obs = nrow(items_subset), fa = "fa", fm = "ml")
+
+# EFA with oblimin rotation (replace k based on parallel analysis result)
+k <- 1
+
+efa_sub <- fa(poly_matrix_sub, nfactors = k,
+              n.obs = nrow(items_subset),
+              rotate = "oblimin",
+              fm = "ml")
+
+print(efa_sub$loadings, cutoff = 0.4, sort = TRUE)
+
+# Loadings table
+loadings_sub <- as.data.frame(unclass(efa_sub$loadings)) %>%
+  tibble::rownames_to_column("PROCTCAE") %>%
+  mutate(across(where(is.numeric), ~round(., 3)),
+         assigned_factor = apply(select(., -PROCTCAE), 1,
+                                 function(x) ifelse(max(abs(x)) < 0.4,
+                                                    "no assignment",
+                                                    paste0("F", which.max(abs(x))))))
+print(loadings_sub)
+
+```
+
+```{r, include=FALSE, echo=FALSE}
+# ── Step 1: Alpha check for each group ──────────────────────────────
+#------- Grouping strategy 1 
+cat("=== Pain ===\n")
+psych::alpha(irt_base_wide %>% 
+  select(Pain_frequency, Pain_severity, Pain_interference))$total["std.alpha"]
+# 0.86
+cat("=== Psychological ===\n")
+psych::alpha(irt_base_wide %>% 
+  select(Activity, Depression, Insomnia_severity,
+        Dyspnea_severity, Dyspnea_interference))$total["std.alpha"]
+# 0.72
+cat("=== Gastrointestinal ===\n")
+psych::alpha(irt_base_wide %>% 
+  select(Appetite, Constipation_severity, Nausea_frequency, 
+         Nausea_severity, Vomit_frequency, Diarrhea_frequency))$total["std.alpha"]
+# 0.66
+
+#------- Grouping strategy 2 
+cat("=== Pain and Dyspnea ===\n")
+psych::omega(irt_base_wide %>% 
+  select(Pain_frequency, Pain_severity, Pain_interference,
+        Dyspnea_severity, Dyspnea_interference),nfactors = 1)$omega.tot
+# 0.78
+cat("=== Psychological ===\n")
+psych::omega(irt_base_wide %>% 
+  select(Activity, Depression, Insomnia_severity),nfactors = 1)$omega.tot
+# 0.61
+cat("=== Gastrointestinal ===\n")
+psych::omega(irt_base_wide %>% 
+  select(Appetite, Constipation_severity, Nausea_frequency, 
+         Nausea_severity, Vomit_frequency, Diarrhea_frequency),nfactors = 1)$omega.tot
+# 0.68 omege, 0.64 without appetite
+
+
+model <- '
+  Pain             =~ Pain_frequency + Pain_severity + Pain_interference
+  Psychological    =~ Activity + Depression + Insomnia_severity + 
+                      Dyspnea_severity + Dyspnea_interference
+  Gastrointestinal =~ Appetite + Constipation_severity + Nausea_frequency + 
+                      Nausea_severity + Vomit_frequency + Diarrhea_frequency
+'
+
+cfa_data_cont <- irt_base_wide %>%
+  select(all_of(item_vars))
+
+fit <- cfa(model, data = cfa_data_cont, estimator = "MLR")
+print(summary(fit, fit.measures = TRUE))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Spearman correlation matrix (pairwise complete obs)
+cor_matrix <- cor(
+  irt_base_wide %>% select(-PTID),
+  method = "spearman",
+  use = "pairwise.complete.obs"
+)
+
+# Round and display as table
+round(cor_matrix, 2)
+
+write.csv(as.data.frame(cor_matrix), here("output", "correlation_matrix.csv"))
+
+
+
+
+
+View(full_irt_base)
+
+```
+
+

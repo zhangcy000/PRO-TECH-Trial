@@ -1,0 +1,408 @@
+---
+title: "Data exploratory - PRO Overll Score"
+author: "Congyu Zhang"
+output: html_document
+---
+# 1. Load packages and set up environment
+
+```{r setup, include=FALSE, echo=FALSE}
+rm(list=ls())
+
+library(here)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(rstatix)
+library(ggpubr)
+library(stringr)
+library(here)
+library(ggsci)
+
+```
+
+# 2. Import the raw data 
+This analysis focus on the full data set rather than training or testing cohort only (this will be explored in another
+code file for both IRT and PRO total model).
+
+```{r, echo=FALSE}
+# train
+train <- read.csv(here("data","PROtotal_data","pro_missing_train.csv"))
+train_id <- unique(train$PTID)
+# validation
+validation <- read.csv(here("data","PROtotal_data","pro_missing_test.csv"))
+vali_id <- unique(validation$PTID)
+```
+
+# 3.1. Data exploratory
+
+## 3.1.1 data imputation
+last observation carry forward method
+limitation of current method：
+1. if a patient no response to all questions at specific time points (it is still be LOCF);
+2. The filling strategy for first time was based on mode of the full trajectory of the patient.
+further sensitivity analysis will be done if needed.
+
+```{r, echo=FALSE}
+#--------------------------------------
+# Missing imputation with LOCF
+#--------------------------------------
+# combine the train and testing cohort
+full_data <- rbind(train,validation) %>%
+            select(-MDV) %>%
+            # high missingness and variability after TAFR 360 days
+            filter(TAFR <= 360)  %>%
+            mutate(FIRSTFLAG = as.numeric(TIME == FIRSTTIME)) %>%
+            mutate(HOSPITAL = as.factor(HOSPITAL), ER = as.factor(ER), DISCONTINUE =as.factor(DISCONTINUE),
+                 C12_DOSE_REDUCTION = as.factor(C12_DOSE_REDUCTION))
+
+
+# define the mode function
+get_mode <- function(x) {
+  x <- x[!is.na(x)]     
+  if (length(x) == 0) { 
+    return(NA)
+  }
+  uniq <- unique(x)
+  uniq[which.max(tabulate(match(x, uniq)))]
+}
+
+# summarize the missing percentage pre time 
+pro_missing_check <- full_data %>%
+               select(PTID,PROCTCAE,TAFR,DV) %>%
+               group_by(PTID, TAFR) %>%
+               summarise(all_na = all(is.na(DV)),.groups = "drop") %>%
+                    group_by(TAFR) %>%
+                    summarise(total_patients = n(), n_all_na = sum(all_na),
+                    pct_all_na = n_all_na / total_patients * 100,
+                    .groups = "drop")
+
+# impute the full original data
+#some patients miss all PRO Score of item 5,6,8,13
+full_fill <- full_data %>%
+        group_by(PTID,PROCTCAE) %>%
+        mutate(pro_mode = get_mode(DV)) %>%
+        mutate(DV = ifelse(FIRSTFLAG & is.na(DV), pro_mode, DV)) %>%
+        arrange(TIME) %>%
+        fill(DV, .direction = "down") %>%
+        ungroup() %>%
+        select(-VAR,-pro_mode,-PROCTCAE)
+
+# calculate the PRO total score and covert to 0-100 boundary data
+# SCORE = total pro score; SCORE2 = transformed SCORE (0-100); SCORE3: change from baseline
+full.transform <- full_fill %>%
+      group_by(PTID,TIME) %>%
+      summarise(
+        count = sum(!is.na(DV)),
+        SCORE = sum(DV,na.rm = TRUE),
+        SCORE2 = SCORE/(count*4)*100,
+        .groups = "drop"
+      )
+
+full_final <- full_fill %>%
+          group_by(PTID,TIME) %>%
+          slice(1) %>% 
+          ungroup() %>%
+          left_join(full.transform, by = c("PTID","TIME")) %>%
+          select(-count,-DV) %>%
+          group_by(PTID) %>%
+          mutate(BASE = SCORE2[TAFR == 0][1]) %>%  
+          ungroup() %>%
+          mutate(SCORE3 = SCORE2 - BASE) %>%
+          select(PTID,TIME,TAFR,SCORE,SCORE2,SCORE3,BASE,everything())
+
+```
+
+## 3.1.2 Total PRO score longitudinal change
+```{r, echo=FALSE}
+# calculate the pro mean and sd for each window and generate the plots
+breaks <- c(seq(0, 360, by = 60))    
+win_labs <- as.character(breaks[-1])
+
+full_mean <- full_final %>%
+    mutate(window = cut(TAFR, breaks = breaks, include.lowest = TRUE, labels = win_labs)) %>%
+    group_by(window) %>%
+    summarise(
+      mean = mean(SCORE2, na.rm = TRUE),
+      sd = sd(SCORE2, na.rm = TRUE),
+      se = sd/sqrt(n()),
+      .groups = "drop")
+
+# PRO total longitudinal change with time
+ggplot(full_mean, aes(x = window, y = mean, group = 1)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd),width = 0.3, size = 0.8) +
+  scale_y_continuous(breaks = seq(0, 45, 15), limits = c(0, 45)) +
+  labs(
+    title = "Total PRO Longitudinal Change with Time",
+    x = "Day",
+    y = "Score (Mean ± SD)") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    axis.title = element_text(face = "bold"),
+    strip.text = element_text(face = "bold", size = 11),
+    strip.background = element_rect(fill = "lightgray"),
+    legend.position = "top",
+    legend.text = element_text(size = 12) 
+  )
+
+```
+## 3.1.3 Total PRO score change from baseline
+```{r, echo=FALSE}
+full_base_mean <- full_final %>%
+    mutate(window = cut(TAFR, breaks = breaks, include.lowest = TRUE, labels = win_labs)) %>%
+    group_by(window) %>%
+    summarise(
+      mean = mean(SCORE3, na.rm = TRUE),
+      sd = sd(SCORE3, na.rm = TRUE),
+      se = sd/sqrt(n()),
+      .groups = "drop"
+    )
+
+# PRO total longitudinal change from baseline with time
+ggplot(full_base_mean, aes(x = window, y = mean, group = 1)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.3, size = 0.8) +
+  scale_y_continuous(breaks = seq(-15, 15, 10), limits = c(-15,15)) +
+  labs(
+    title = "Total PRO Longitudinal Change from Baseline with Time",
+    x = "Day",
+    y = "Score (Mean ± SD)") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    axis.title = element_text(face = "bold"),
+    strip.text = element_text(face = "bold", size = 11),
+    strip.background = element_rect(fill = "lightgray"),
+    legend.position = "top",
+    legend.text = element_text(size = 12) 
+  )
+
+```
+## 3.1.4 Endpoint subgroup analysis
+Compare PRO longitudinal change of patient with the event to patient without the event
+
+### 3.1.4.1 Dose Discontinuation
+```{r, echo=FALSE}
+pro_change_dis <- full_final %>%
+  mutate(DISCONTINUE = as.factor(DISCONTINUE)) %>%
+  mutate(window = cut(TAFR, breaks = breaks, include.lowest = TRUE, labels = win_labs)) %>%
+  group_by(window,DISCONTINUE) %>%
+  summarise(
+    count = n(),
+    n_pt = n_distinct(PTID),
+    mean = mean(SCORE2, na.rm = TRUE),
+    sd = sd(SCORE2, na.rm = TRUE),
+    se = sd/sqrt(n()),
+    .groups = "drop")
+
+pro_dis <- ggplot(pro_change_dis,aes(x = window, y = mean, color = DISCONTINUE, group = DISCONTINUE)) +
+  geom_line(size = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd),
+                width = 0.3, size = 1) +
+  #geom_text(aes(label = paste0("n=", n_pt)),
+  #          vjust = -0.8, size = 3.3, show.legend = FALSE) +
+  scale_y_continuous(breaks = seq(0, 40, 20), limits = c(0, 40)) +
+  scale_color_manual(
+    values = c("0" = "#1964B0", "1" = "#DB5829"),
+    labels = c("1" = "Has Treatment Discontinuation",
+               "0" = "No Treatment Discontinuation"),name = NULL)+
+  labs(
+    x = "Time (days)",
+    y = "Score (Mean ± SD)"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(color = "black",size = 16),
+    legend.position = "top",
+    legend.text = element_text(size = 16),
+    axis.title = element_text(size = 16, face = "bold")
+  )
+
+print(pro_dis)
+
+ggsave("plot/supplement3b.tiff",
+       plot = pro_dis,
+       width = 7.5,
+       height = 6,
+       units = "in",
+       dpi = 300)
+
+```
+
+### 3.1.4.2 hospitalization
+
+```{r, echo=FALSE}
+pro_change_hos <- full_final %>%
+  mutate(HOSPITAL = as.factor(HOSPITAL)) %>%
+  mutate(window = cut(TAFR, breaks = breaks, include.lowest = TRUE, labels = win_labs)) %>%
+  group_by(window,HOSPITAL) %>%
+  summarise(
+    count = n(),
+    n_pt = n_distinct(PTID),
+    mean = mean(SCORE2, na.rm = TRUE),
+    sd = sd(SCORE2, na.rm = TRUE),
+    se = sd/sqrt(n()),
+    .groups = "drop")
+
+pro_hos <- ggplot(pro_change_hos,aes(x = window, y = mean, color = HOSPITAL, group = HOSPITAL)) +
+  geom_line(size = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd),
+                width = 0.3, size = 1) +
+  #geom_text(aes(label = paste0("n=", n_pt)),
+  #          vjust = -0.8, size = 3.3, show.legend = FALSE) +
+  scale_y_continuous(breaks = seq(0, 40, 20), limits = c(0, 40)) +
+  scale_color_manual(
+    values = c("0" = "#1964B0", "1" = "#DB5829"),
+    labels = c("1" = "Has Hospitalization",
+               "0" = "No Hospitalization"),name = NULL)+
+  labs(
+    x = "Time (days)",
+    y = "Score (Mean ± SD)"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(color = "black",size = 16),
+    legend.position = "top",
+    legend.text = element_text(size = 16),
+    axis.title = element_text(size = 16, face = "bold")
+  )
+
+print(pro_hos)
+
+ggsave("plot/figure1c.tiff",
+       plot = pro_hos,
+       width = 8,
+       height = 6,
+       units = "in",
+       dpi = 300)
+
+
+```
+
+### 3.1.4.3 ER Visit
+
+```{r, echo=FALSE}
+pro_change_er <- full_final %>%
+  mutate(ER = as.factor(ER)) %>%
+  mutate(window = cut(TAFR, breaks = breaks, include.lowest = TRUE, labels = win_labs)) %>%
+  group_by(window,ER) %>%
+  summarise(
+    count = n(),
+    n_pt = n_distinct(PTID),
+    mean = mean(SCORE2, na.rm = TRUE),
+    sd = sd(SCORE2, na.rm = TRUE),
+    se = sd/sqrt(n()),
+    .groups = "drop")
+
+pro_er <- ggplot(pro_change_er,aes(x = window, y = mean, color = ER, group = ER)) +
+  geom_line(size = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd),
+                width = 0.3, size = 1) +
+  #geom_text(aes(label = paste0("n=", n_pt)),
+  #          vjust = -0.8, size = 3.3, show.legend = FALSE) +
+  scale_y_continuous(breaks = seq(0, 40, 20), limits = c(0, 40)) +
+  scale_color_manual(
+    values = c("0" = "#1964B0", "1" = "#DB5829"),
+    labels = c("1" = "Has ED Visit",
+               "0" = "No ED Visit"),
+    name = NULL
+  )+
+  labs(
+    x = "Time (Day)",
+    y = "Score (Mean ± SD)"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(color = "black",size = 16),
+    legend.position = "top",
+    legend.text = element_text(size = 16),
+    axis.title = element_text(size = 16, face = "bold")
+  )
+
+print(pro_er)
+
+ggsave("plot/figure1d.tiff",
+       plot = pro_er,
+       width = 8,
+       height = 6,
+       units = "in",
+       dpi = 300)
+
+
+
+```
+
+### 3.1.4.4 Dose reduction
+
+```{r, echo=FALSE}
+pro_change_red <- full_final %>%
+  mutate(C12_DOSE_REDUCTION = as.factor(C12_DOSE_REDUCTION)) %>%
+  mutate(window = cut(TAFR, breaks = breaks, include.lowest = TRUE, labels = win_labs)) %>%
+  group_by(window,C12_DOSE_REDUCTION) %>%
+  summarise(
+    count = n(),
+    n_pt = n_distinct(PTID),
+    mean = mean(SCORE2, na.rm = TRUE),
+    sd = sd(SCORE2, na.rm = TRUE),
+    se = sd/sqrt(n()),
+    .groups = "drop")
+
+pro_red <- ggplot(pro_change_red,aes(x = window, y = mean, color = C12_DOSE_REDUCTION, group = C12_DOSE_REDUCTION)) +
+  geom_line(size = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd),
+                width = 0.3, size = 1) +
+  #geom_text(aes(label = paste0("n=", n_pt)),
+  #          vjust = -0.8, size = 3.3, show.legend = FALSE) +
+  scale_y_continuous(breaks = seq(0, 40, 20), limits = c(0, 40)) +
+  scale_color_manual(
+    values = c("0" = "#1964B0", "1" = "#DB5829"),
+    labels = c("1" = "Has Dose Reduction",
+               "0" = "No Dose Reduction"),
+    name = NULL
+  )+
+  labs(
+    x = "Time (Day)",
+    y = "Score (Mean ± SD)"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(color = "black",size = 16),
+    legend.position = "top",
+    legend.text = element_text(size = 16),
+    axis.title = element_text(size = 16, face = "bold")
+  )
+
+print(pro_red)
+
+ggsave("plot/supplement3a.tiff",
+       plot = pro_red,
+       width = 7.5,
+       height = 6,
+       units = "in",
+       dpi = 300)
+
+
+```
+## 3.1.5 Export the datasets for PRO_total model 
+Data ready for PRO total model
+
+```{r, include=FALSE, echo=FALSE}
+
+train_final_data <- full_final %>%
+                filter(PTID %in% train_id)
+
+test_final_data <- full_final %>%
+                filter(PTID %in% vali_id)
+
+# Export the datasets for PRO total model
+#write.csv(train_final_data, "LOCF_train.csv", row.names = FALSE)
+#write.csv(test_final_data, "LOCF_test.csv", row.names = FALSE)  
+
+```
