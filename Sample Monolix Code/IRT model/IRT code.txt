@@ -1,0 +1,462 @@
+DESCRIPTION:
+problem: Longitudinal IRT Model
+ID : unique patient identifier 
+TIME : time in days 
+VAR : variable identifier (symptom item)
+DV : original dependent variable (score non-reversed) 
+DV2 : dependent variable ((reversed) scores) as input for the model
+SEX: 1:Male; 2:Female
+ECOG: clinician reported ECOG (0,1,2,3)
+Other covariates (ETHNICITY, RACE, CANCERTYPE, IV, PO) for reference only and are not in the final model
+
+
+[LONGITUDINAL]
+input = {
+  DIS1, Q1th1, Q1th2, Q1th3,
+  DIS2, Q2th1, Q2th2, Q2th3, 
+  DIS3, Q3th1, Q3th2, Q3th3, 
+  DIS4, Q4th1, Q4th2, Q4th3, 
+  DIS5, Q5th1, Q5th2, Q5th3, 
+  DIS6, Q6th1, Q6th2, Q6th3, 
+  DIS7, Q7th1, Q7th2, Q7th3, 
+  DIS8, Q8th1, Q8th2, Q8th3, 
+  DIS9, Q9th1, Q9th2, Q9th3, 
+  DIS10, Q10th1, Q10th2, Q10th3, 
+  DIS11, Q11th1, Q11th2, Q11th3, 
+  DIS12, Q12th1, Q12th2, Q12th3, 
+  DIS13, Q13th1, Q13th2, Q13th3, 
+  DIS14, Q14th1, Q14th2, Q14th3, 
+  BASEGI, EMAXGI, KDGI, SLPGI,
+  BASEPS, EMAXPS, KDPS, SLPPS,
+  BASEPD, EMAXPD, KDPD, SLPPD
+}
+
+
+EQUATION:
+; Symptom domain
+; Gastrointestinal domain: Appetite change (item 3), Nausea frequency (item 7), Nausea severity (item 8), 
+;		           Vomit frequency (item 9), Diarrhea frequency (item 10), Constipation severity (item 11).
+
+; Psychological domain: Activity (item 1), Depression (item 2), Insomnia severity (item 14).
+
+; Pain and dyspnea domain: Pain frequency (item 4), Pain severity (item 5), Pain interference (item 6), 
+;                          Dyspnea severity (item 12), Dyspnea interference (item 13)
+
+GI = BASEGI + EMAXGI * (1 - exp(-KDGI * t)) - SLPGI * t * 0.001 
+PS = BASEPS + EMAXPS * (1 - exp(-KDPS * t)) - SLPPS * t * 0.001
+PD = BASEPD + EMAXPD * (1 - exp(-KDPD * t)) - SLPPD * t * 0.001
+
+; Item-specific linear predictors
+eta1 = PS
+eta2 = PS
+eta3 = GI
+eta4 = PD
+eta5 = PD
+eta6 = PD
+eta7 = GI
+eta8 = GI
+eta9 = GI
+eta10 = GI
+eta11 = GI
+eta12 = PD
+eta13 = PD
+eta14 = PS
+
+; Define cumulative logits for each item
+;-------------Item 1, In the last 7 days, how would you generally rate your ACTIVITY - Reversed?------------
+b1_1 = Q1th1   ;ranking 3 and 4
+b1_2 = Q1th1 + Q1th2
+b1_3 = Q1th1 + Q1th2 + Q1th3
+
+p1_0AC = 1 - exp(DIS1*(eta1-b1_1))/(1+exp(DIS1*(eta1-b1_1)))
+p1_1AC = exp(DIS1*(eta1-b1_1))/(1+exp(DIS1*(eta1-b1_1)))-exp(DIS1*(eta1-b1_2))/(1+exp(DIS1*(eta1-b1_2)))
+p1_2AC = exp(DIS1*(eta1-b1_2))/(1+exp(DIS1*(eta1-b1_2)))-exp(DIS1*(eta1-b1_3))/(1+exp(DIS1*(eta1-b1_3)))
+p1_3AC = exp(DIS1*(eta1-b1_3))/(1+exp(DIS1*(eta1-b1_3)))
+
+; Add a range for probability
+p1_0 = min(max(p1_0AC,0.0001),0.9999) ;prob for ranking 3 and 4
+p1_1 = min(max(p1_1AC,0.0001),0.9999)
+p1_2 = min(max(p1_2AC,0.0001),0.9999)
+p1_3 = min(max(p1_3AC,0.0001),0.9999)
+
+;-------------Item 2, In the last 7 days, how often have you been bothered by FEELING DOWN, DEPRESSED, OR HOPELESS - Reversed?------------
+b2_1 = Q2th1
+b2_2 = Q2th1 + Q2th2
+b2_3 = Q2th1 + Q2th2 + Q2th3
+
+p2_0DE = 1 - exp(DIS2*(eta2-b2_1))/(1+exp(DIS2*(eta2-b2_1)))
+p2_1DE = exp(DIS2*(eta2-b2_1))/(1+exp(DIS2*(eta2-b2_1)))-exp(DIS2*(eta2-b2_2))/(1+exp(DIS2*(eta2-b2_2)))
+p2_2DE = exp(DIS2*(eta2-b2_2))/(1+exp(DIS2*(eta2-b2_2)))-exp(DIS2*(eta2-b2_3))/(1+exp(DIS2*(eta2-b2_3)))
+p2_3DE = exp(DIS2*(eta2-b2_3))/(1+exp(DIS2*(eta2-b2_3)))
+
+; Add a range for probability
+p2_0 = min(max(p2_0DE,0.0001),0.9999)
+p2_1 = min(max(p2_1DE,0.0001),0.9999)
+p2_2 = min(max(p2_2DE,0.0001),0.9999)
+p2_3 = min(max(p2_3DE,0.0001),0.9999)
+
+;-------------Item 3, In the last 7 days, has your EATING or DRINKING DECREASED - Reversed?------------
+b3_1 = Q3th1
+b3_2 = Q3th1 + Q3th2
+b3_3 = Q3th1 + Q3th2 + Q3th3
+
+p3_0AP = 1 - exp(DIS3*(eta3-b3_1))/(1+exp(DIS3*(eta3-b3_1)))
+p3_1AP = exp(DIS3*(eta3-b3_1))/(1+exp(DIS3*(eta3-b3_1)))-exp(DIS3*(eta3-b3_2))/(1+exp(DIS3*(eta3-b3_2)))
+p3_2AP = exp(DIS3*(eta3-b3_2))/(1+exp(DIS3*(eta3-b3_2)))-exp(DIS3*(eta3-b3_3))/(1+exp(DIS3*(eta3-b3_3)))
+p3_3AP = exp(DIS3*(eta3-b3_3))/(1+exp(DIS3*(eta3-b3_3)))
+
+; Add a range for probability
+p3_0 = min(max(p3_0AP,0.0001),0.9999)
+p3_1 = min(max(p3_1AP,0.0001),0.9999)
+p3_2 = min(max(p3_2AP,0.0001),0.9999)
+p3_3 = min(max(p3_3AP,0.0001),0.9999)
+
+;-------------Item 4, In the last 7 days, how OFTEN did you have PAIN - Reversed?---------
+b4_1 = Q4th1
+b4_2 = Q4th1 + Q4th2
+b4_3 = Q4th1 + Q4th2 + Q4th3
+
+p4_0PA = 1 - exp(DIS4*(eta4-b4_1))/(1+exp(DIS4*(eta4-b4_1)))
+p4_1PA = exp(DIS4*(eta4-b4_1))/(1+exp(DIS4*(eta4-b4_1)))-exp(DIS4*(eta4-b4_2))/(1+exp(DIS4*(eta4-b4_2)))
+p4_2PA = exp(DIS4*(eta4-b4_2))/(1+exp(DIS4*(eta4-b4_2)))-exp(DIS4*(eta4-b4_3))/(1+exp(DIS4*(eta4-b4_3)))
+p4_3PA = exp(DIS4*(eta4-b4_3))/(1+exp(DIS4*(eta4-b4_3)))
+
+; Add a range for probability
+p4_0 = min(max(p4_0PA,0.0001),0.9999)
+p4_1 = min(max(p4_1PA,0.0001),0.9999)
+p4_2 = min(max(p4_2PA,0.0001),0.9999)
+p4_3 = min(max(p4_3PA,0.0001),0.9999)
+
+;-------------Item 5, In the last 7 days, what was the SEVERITY of your PAIN at its WORST - Reversed?---------
+b5_1 = Q5th1
+b5_2 = Q5th1 + Q5th2
+b5_3 = Q5th1 + Q5th2 + Q5th3
+
+p5_0PA = 1 - exp(DIS5*(eta5-b5_1))/(1+exp(DIS5*(eta5-b5_1)))
+p5_1PA = exp(DIS5*(eta5-b5_1))/(1+exp(DIS5*(eta5-b5_1)))-exp(DIS5*(eta5-b5_2))/(1+exp(DIS5*(eta5-b5_2)))
+p5_2PA = exp(DIS5*(eta5-b5_2))/(1+exp(DIS5*(eta5-b5_2)))-exp(DIS5*(eta5-b5_3))/(1+exp(DIS5*(eta5-b5_3)))
+p5_3PA = exp(DIS5*(eta5-b5_3))/(1+exp(DIS5*(eta5-b5_3)))
+
+; Add a range for probability
+p5_0 = min(max(p5_0PA,0.0001),0.9999)
+p5_1 = min(max(p5_1PA,0.0001),0.9999)
+p5_2 = min(max(p5_2PA,0.0001),0.9999)
+p5_3 = min(max(p5_3PA,0.0001),0.9999)
+
+;-------------Item 6, In the last 7 days, Pain interference level - Reversed?---------
+b6_1 = Q6th1
+b6_2 = Q6th1 + Q6th2
+b6_3 = Q6th1 + Q6th2 + Q6th3
+
+p6_0PA = 1 - exp(DIS6*(eta6-b6_1))/(1+exp(DIS6*(eta6-b6_1)))
+p6_1PA = exp(DIS6*(eta6-b6_1))/(1+exp(DIS6*(eta6-b6_1)))-exp(DIS6*(eta6-b6_2))/(1+exp(DIS6*(eta6-b6_2)))
+p6_2PA = exp(DIS6*(eta6-b6_2))/(1+exp(DIS6*(eta6-b6_2)))-exp(DIS6*(eta6-b6_3))/(1+exp(DIS6*(eta6-b6_3)))
+p6_3PA = exp(DIS6*(eta6-b6_3))/(1+exp(DIS6*(eta6-b6_3)))
+
+; Add a range for probability
+p6_0 = min(max(p6_0PA,0.0001),0.9999)
+p6_1 = min(max(p6_1PA,0.0001),0.9999)
+p6_2 = min(max(p6_2PA,0.0001),0.9999)
+p6_3 = min(max(p6_3PA,0.0001),0.9999)
+
+;-------------Item 7, In the last 7 days, how OFTEN did you have NAUSEA - Reversed?---------
+b7_1 = Q7th1
+b7_2 = Q7th1 + Q7th2
+b7_3 = Q7th1 + Q7th2 + Q7th3
+
+p7_0NV = 1 - exp(DIS7*(eta7-b7_1))/(1+exp(DIS7*(eta7-b7_1)))
+p7_1NV = exp(DIS7*(eta7-b7_1))/(1+exp(DIS7*(eta7-b7_1)))-exp(DIS7*(eta7-b7_2))/(1+exp(DIS7*(eta7-b7_2)))
+p7_2NV = exp(DIS7*(eta7-b7_2))/(1+exp(DIS7*(eta7-b7_2)))-exp(DIS7*(eta7-b7_3))/(1+exp(DIS7*(eta7-b7_3)))
+p7_3NV = exp(DIS7*(eta7-b7_3))/(1+exp(DIS7*(eta7-b7_3)))
+
+; Add a range for probability
+p7_0 = min(max(p7_0NV,0.0001),0.9999)
+p7_1 = min(max(p7_1NV,0.0001),0.9999)
+p7_2 = min(max(p7_2NV,0.0001),0.9999)
+p7_3 = min(max(p7_3NV,0.0001),0.9999)
+
+;-------------Item 8, In the last 7 days, what was the SEVERITY of your NAUSEA at its WORST - Reversed?---------
+b8_1 = Q8th1
+b8_2 = Q8th1 + Q8th2
+b8_3 = Q8th1 + Q8th2 + Q8th3
+
+p8_0NV = 1 - exp(DIS8*(eta8-b8_1))/(1+exp(DIS8*(eta8-b8_1)))
+p8_1NV = exp(DIS8*(eta8-b8_1))/(1+exp(DIS8*(eta8-b8_1)))-exp(DIS8*(eta8-b8_2))/(1+exp(DIS8*(eta8-b8_2)))
+p8_2NV = exp(DIS8*(eta8-b8_2))/(1+exp(DIS8*(eta8-b8_2)))-exp(DIS8*(eta8-b8_3))/(1+exp(DIS8*(eta8-b8_3)))
+p8_3NV = exp(DIS8*(eta8-b8_3))/(1+exp(DIS8*(eta8-b8_3)))
+
+; Add a range for probability
+p8_0 = min(max(p8_0NV,0.0001),0.9999)
+p8_1 = min(max(p8_1NV,0.0001),0.9999)
+p8_2 = min(max(p8_2NV,0.0001),0.9999)
+p8_3 = min(max(p8_3NV,0.0001),0.9999)
+
+;-------------Item 9, In the last 7 days, how OFTEN did you have VOMITING - Reversed?---------
+b9_1 = Q9th1
+b9_2 = Q9th1 + Q9th2
+b9_3 = Q9th1 + Q9th2 + Q9th3
+
+p9_0NV = 1 - exp(DIS9*(eta9-b9_1))/(1+exp(DIS9*(eta9-b9_1)))
+p9_1NV = exp(DIS9*(eta9-b9_1))/(1+exp(DIS9*(eta9-b9_1)))-exp(DIS9*(eta9-b9_2))/(1+exp(DIS9*(eta9-b9_2)))
+p9_2NV = exp(DIS9*(eta9-b9_2))/(1+exp(DIS9*(eta9-b9_2)))-exp(DIS9*(eta9-b9_3))/(1+exp(DIS9*(eta9-b9_3)))
+p9_3NV = exp(DIS9*(eta9-b9_3))/(1+exp(DIS9*(eta9-b9_3)))
+
+; Add a range for probability
+p9_0 = min(max(p9_0NV,0.0001),0.9999)
+p9_1 = min(max(p9_1NV,0.0001),0.9999)
+p9_2 = min(max(p9_2NV,0.0001),0.9999)
+p9_3 = min(max(p9_3NV,0.0001),0.9999)
+
+;-------------Item 10, In the last 7 days, how OFTEN did you have LOOSE OR WATERY STOOLS (DIARRHEA) - Reversed?---------
+b10_1 = Q10th1
+b10_2 = Q10th1 + Q10th2
+b10_3 = Q10th1 + Q10th2 + Q10th3
+
+p10_0DI = 1 - exp(DIS10*(eta10-b10_1))/(1+exp(DIS10*(eta10-b10_1)))
+p10_1DI = exp(DIS10*(eta10-b10_1))/(1+exp(DIS10*(eta10-b10_1)))-exp(DIS10*(eta10-b10_2))/(1+exp(DIS10*(eta10-b10_2)))
+p10_2DI = exp(DIS10*(eta10-b10_2))/(1+exp(DIS10*(eta10-b10_2)))-exp(DIS10*(eta10-b10_3))/(1+exp(DIS10*(eta10-b10_3)))
+p10_3DI = exp(DIS10*(eta10-b10_3))/(1+exp(DIS10*(eta10-b10_3)))
+
+; Add a range for probability
+p10_0 = min(max(p10_0DI,0.0001),0.9999)
+p10_1 = min(max(p10_1DI,0.0001),0.9999)
+p10_2 = min(max(p10_2DI,0.0001),0.9999)
+p10_3 = min(max(p10_3DI,0.0001),0.9999)
+
+;-------------Item 11, In the last 7 days, what was the SEVERITY of your CONSTIPATION at its WORST - Reversed?---------
+b11_1 = Q11th1
+b11_2 = Q11th1 + Q11th2
+b11_3 = Q11th1 + Q11th2 + Q11th3
+
+p11_0CO = 1 - exp(DIS11*(eta11-b11_1))/(1+exp(DIS11*(eta11-b11_1)))
+p11_1CO = exp(DIS11*(eta11-b11_1))/(1+exp(DIS11*(eta11-b11_1)))-exp(DIS11*(eta11-b11_2))/(1+exp(DIS11*(eta11-b11_2)))
+p11_2CO = exp(DIS11*(eta11-b11_2))/(1+exp(DIS11*(eta11-b11_2)))-exp(DIS11*(eta11-b11_3))/(1+exp(DIS11*(eta11-b11_3)))
+p11_3CO = exp(DIS11*(eta11-b11_3))/(1+exp(DIS11*(eta11-b11_3)))
+
+; Add a range for probability
+p11_0 = min(max(p11_0CO,0.0001),0.9999)
+p11_1 = min(max(p11_1CO,0.0001),0.9999)
+p11_2 = min(max(p11_2CO,0.0001),0.9999)
+p11_3 = min(max(p11_3CO,0.0001),0.9999)
+
+;-------------Item 12, In the last 7 days, what was the SEVERITY of your SHORTNESS OF BREATH at its WORST - Reversed?---------
+b12_1 = Q12th1
+b12_2 = Q12th1 + Q12th2
+b12_3 = Q12th1 + Q12th2 + Q12th3
+
+p12_0DY = 1 - exp(DIS12*(eta12-b12_1))/(1+exp(DIS12*(eta12-b12_1)))
+p12_1DY = exp(DIS12*(eta12-b12_1))/(1+exp(DIS12*(eta12-b12_1)))-exp(DIS12*(eta12-b12_2))/(1+exp(DIS12*(eta12-b12_2)))
+p12_2DY = exp(DIS12*(eta12-b12_2))/(1+exp(DIS12*(eta12-b12_2)))-exp(DIS12*(eta12-b12_3))/(1+exp(DIS12*(eta12-b12_3)))
+p12_3DY = exp(DIS12*(eta12-b12_3))/(1+exp(DIS12*(eta12-b12_3)))
+
+; Add a range for probability
+p12_0 = min(max(p12_0DY,0.0001),0.9999)
+p12_1 = min(max(p12_1DY,0.0001),0.9999)
+p12_2 = min(max(p12_2DY,0.0001),0.9999)
+p12_3 = min(max(p12_3DY,0.0001),0.9999)
+
+;-------------Item 13, In the last 7 days, Shortness of Breath Interference level - Reversed?---------
+b13_1 = Q13th1
+b13_2 = Q13th1 + Q13th2
+b13_3 = Q13th1 + Q13th2 + Q13th3
+
+p13_0DY = 1 - exp(DIS13*(eta13-b13_1))/(1+exp(DIS13*(eta13-b13_1)))
+p13_1DY = exp(DIS13*(eta13-b13_1))/(1+exp(DIS13*(eta13-b13_1)))-exp(DIS13*(eta13-b13_2))/(1+exp(DIS13*(eta13-b13_2)))
+p13_2DY = exp(DIS13*(eta13-b13_2))/(1+exp(DIS13*(eta13-b13_2)))-exp(DIS13*(eta13-b13_3))/(1+exp(DIS13*(eta13-b13_3)))
+p13_3DY = exp(DIS13*(eta13-b13_3))/(1+exp(DIS13*(eta13-b13_3)))
+
+; Add a range for probability
+p13_0 = min(max(p13_0DY,0.0001),0.9999)
+p13_1 = min(max(p13_1DY,0.0001),0.9999)
+p13_2 = min(max(p13_2DY,0.0001),0.9999)
+p13_3 = min(max(p13_3DY,0.0001),0.9999)
+
+;-------------Item 14, In the last 7 days, what was the SEVERITY of your INSOMNIA (including difficulty falling asleep, staying asleep, or waking up too early) at its WORST - Reversed?---------
+b14_1 = Q14th1
+b14_2 = Q14th1 + Q14th2
+b14_3 = Q14th1 + Q14th2 + Q14th3
+
+p14_0IN = 1 - exp(DIS14*(eta14-b14_1))/(1+exp(DIS14*(eta14-b14_1)))
+p14_1IN = exp(DIS14*(eta14-b14_1))/(1+exp(DIS14*(eta14-b14_1)))-exp(DIS14*(eta14-b14_2))/(1+exp(DIS14*(eta14-b14_2)))
+p14_2IN = exp(DIS14*(eta14-b14_2))/(1+exp(DIS14*(eta14-b14_2)))-exp(DIS14*(eta14-b14_3))/(1+exp(DIS14*(eta14-b14_3)))
+p14_3IN = exp(DIS14*(eta14-b14_3))/(1+exp(DIS14*(eta14-b14_3)))
+
+; Add a range for probability
+p14_0 = min(max(p14_0IN,0.0001),0.9999)
+p14_1 = min(max(p14_1IN,0.0001),0.9999)
+p14_2 = min(max(p14_2IN,0.0001),0.9999)
+p14_3 = min(max(p14_3IN,0.0001),0.9999)
+
+exp_001 = (p1_0*3 + p1_1*2 + p1_2*1 + p1_3*0)
+exp_002 = (p2_0*3 + p2_1*2 + p2_2*1 + p2_3*0)
+exp_003 = (p3_0*3 + p3_1*2 + p3_2*1 + p3_3*0)
+exp_004 = (p4_0*3 + p4_1*2 + p4_2*1 + p4_3*0)
+exp_005 = (p5_0*3 + p5_1*2 + p5_2*1 + p5_3*0)
+exp_006 = (p6_0*3 + p6_1*2 + p6_2*1 + p6_3*0)
+exp_007 = (p7_0*3 + p7_1*2 + p7_2*1 + p7_3*0)
+exp_008 = (p8_0*3 + p8_1*2 + p8_2*1 + p8_3*0)
+exp_009 = (p9_0*3 + p9_1*2 + p9_2*1 + p9_3*0)
+exp_010 = (p10_0*3 + p10_1*2 + p10_2*1 + p10_3*0)
+exp_011 = (p11_0*3 + p11_1*2 + p11_2*1 + p11_3*0)
+exp_012 = (p12_0*3 + p12_1*2 + p12_2*1 + p12_3*0)
+exp_013 = (p13_0*3 + p13_1*2 + p13_2*1 + p13_3*0)
+exp_014 = (p14_0*3 + p14_1*2 + p14_2*1 + p14_3*0)
+
+
+DEFINITION:
+;reversed category 
+
+; yi probability of symptom i at specific level
+
+; yi = 1 represented original PRO level 3 and 4 since these two levels were combined together in the data preparation
+; yi = 2 represented original PRO level 2
+; yi = 3 represented original PRO level 1
+; yi = 4 represented original PRO level 0
+
+y1 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y1,
+  P(y1=1) = p1_0 
+  P(y1=2) = p1_1 
+  P(y1=3) = p1_2 
+  P(y1=4) = p1_3 
+}
+
+y2 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y2,
+  P(y2=1) = p2_0
+  P(y2=2) = p2_1
+  P(y2=3) = p2_2
+  P(y2=4) = p2_3
+}
+
+y3 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y3,
+  P(y3=1) = p3_0
+  P(y3=2) = p3_1
+  P(y3=3) = p3_2
+  P(y3=4) = p3_3
+}
+
+y4 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y4,
+  P(y4=1) = p4_0
+  P(y4=2) = p4_1
+  P(y4=3) = p4_2
+  P(y4=4) = p4_3
+}
+
+y5 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y5,
+  P(y5=1) = p5_0
+  P(y5=2) = p5_1
+  P(y5=3) = p5_2
+  P(y5=4) = p5_3
+}
+
+y6 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y6,
+  P(y6=1) = p6_0
+  P(y6=2) = p6_1
+  P(y6=3) = p6_2
+  P(y6=4) = p6_3
+}
+
+y7 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y7,
+  P(y7=1) = p7_0
+  P(y7=2) = p7_1
+  P(y7=3) = p7_2
+  P(y7=4) = p7_3
+}
+
+y8 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y8,
+  P(y8=1) = p8_0
+  P(y8=2) = p8_1
+  P(y8=3) = p8_2
+  P(y8=4) = p8_3
+}
+
+y9 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y9,
+  P(y9=1) = p9_0
+  P(y9=2) = p9_1
+  P(y9=3) = p9_2
+  P(y9=4) = p9_3
+}
+
+y10 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y10,
+  P(y10=1) = p10_0
+  P(y10=2) = p10_1
+  P(y10=3) = p10_2
+  P(y10=4) = p10_3
+}
+
+y11 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y11,
+  P(y11=1) = p11_0
+  P(y11=2) = p11_1
+  P(y11=3) = p11_2
+  P(y11=4) = p11_3
+}
+
+y12 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y12,
+  P(y12=1) = p12_0
+  P(y12=2) = p12_1
+  P(y12=3) = p12_2
+  P(y12=4) = p12_3
+}
+
+y13 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y13,
+  P(y13=1) = p13_0
+  P(y13=2) = p13_1
+  P(y13=3) = p13_2
+  P(y13=4) = p13_3
+}
+
+y14 = {
+  type = categorical,
+  categories = {1,2,3,4}, 
+  ;observationID = y14,
+  P(y14=1) = p14_0
+  P(y14=2) = p14_1
+  P(y14=3) = p14_2
+  P(y14=4) = p14_3
+}
+
+OUTPUT:
+output = {y1, y10, y11, y12, y13, y14, y2, y3, y4, y5, y6, y7, y8, y9}
+table = {exp_001,exp_002,exp_003,exp_004,exp_005,exp_006,exp_007,exp_008,exp_009,exp_010,exp_011,exp_012,exp_013,exp_014}
+
+
+
+

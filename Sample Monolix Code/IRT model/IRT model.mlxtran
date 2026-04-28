@@ -1,0 +1,243 @@
+<DATAFILE>
+
+[FILEINFO]
+file={path='synthesis_IRT.csv'}
+delimiter = comma
+header={ID, VAR, TIME, DV, DV2, AGE, SEX, ECOG, ETHNICITY, RACE, CANCERTYPE, IV, PO}
+
+[CONTENT]
+ID = {use=identifier}
+VAR = {use=observationtype}
+TIME = {use=time}
+DV2 = {use=observation, yname={'1', '10', '11', '12', '13', '14', '2', '3', '4', '5', '6', '7', '8', '9'}, type={discrete, discrete, discrete, discrete, discrete, discrete, discrete, discrete, discrete, discrete, discrete, discrete, discrete, discrete}}
+AGE = {use=covariate, type=continuous}
+SEX = {use=covariate, type=categorical}
+ECOG = {use=covariate, type=categorical}
+ETHNICITY = {use=covariate, type=categorical}
+RACE = {use=covariate, type=categorical}
+CANCERTYPE = {use=covariate, type=categorical}
+IV = {use=covariate, type=categorical}
+PO = {use=covariate, type=categorical}
+
+<MODEL>
+
+[COVARIATE]
+input = {AGE, ECOG, SEX, CANCERTYPE, ETHNICITY, IV, PO, RACE}
+
+ECOG = {type=categorical, categories={'0', '1', '2', '3'}}
+SEX = {type=categorical, categories={'1', '2'}}
+CANCERTYPE = {type=categorical, categories={'0', '1'}}
+ETHNICITY = {type=categorical, categories={'0', '1'}}
+IV = {type=categorical, categories={'0', '1'}}
+PO = {type=categorical, categories={'0', '1'}}
+RACE = {type=categorical, categories={'0', '1'}}
+
+DEFINITION:
+tECOG =
+{
+  transform = ECOG, 
+  categories = {
+  'G_0' = {'0'},
+  'G_1' = {'1'},
+  'G_2_3' = {'2', '3'}  }, 
+  reference = 'G_0'
+}
+
+[INDIVIDUAL]
+input = {BASEGI_pop, BASEPD_pop, BASEPS_pop, DIS1_pop, DIS10_pop, DIS11_pop, DIS12_pop, DIS14_pop, DIS2_pop, DIS3_pop, DIS4_pop, DIS7_pop, DIS9_pop, Q10th1_pop, Q10th2_pop, Q10th3_pop, Q11th1_pop, Q11th2_pop, Q11th3_pop, Q12th1_pop, Q12th2_pop, Q12th3_pop, Q13th1_pop, Q13th2_pop, Q13th3_pop, Q14th1_pop, Q14th2_pop, Q14th3_pop, Q1th1_pop, Q1th2_pop, Q1th3_pop, Q2th1_pop, Q2th2_pop, Q2th3_pop, Q3th1_pop, Q3th2_pop, Q3th3_pop, Q4th1_pop, Q4th2_pop, Q4th3_pop, Q5th1_pop, Q5th2_pop, Q5th3_pop, Q6th1_pop, Q6th2_pop, Q6th3_pop, Q7th1_pop, Q7th2_pop, Q7th3_pop, Q8th1_pop, Q8th2_pop, Q8th3_pop, Q9th1_pop, Q9th2_pop, Q9th3_pop, omega_BASEGI, omega_BASEPS, omega_BASEPD, KDGI_pop, KDPD_pop, KDPS_pop, SLPGI_pop, omega_SLPGI, SLPPD_pop, omega_SLPPD, SLPPS_pop, omega_SLPPS, DIS13_pop, DIS5_pop, DIS6_pop, DIS8_pop, omega_KDGI, omega_KDPS, omega_KDPD, tECOG, beta_BASEPS_tECOG_G_1, beta_BASEPS_tECOG_G_2_3, SEX, beta_BASEGI_SEX_2, beta_BASEPS_SEX_2, beta_BASEPD_tECOG_G_1, beta_BASEPD_tECOG_G_2_3, EMAXGI_pop, omega_EMAXGI, EMAXPD_pop, omega_EMAXPD, EMAXPS_pop, omega_EMAXPS}
+
+tECOG = {type=categorical, categories={'G_0', 'G_1', 'G_2_3'}}
+SEX = {type=categorical, categories={'1', '2'}}
+
+DEFINITION:
+BASEGI = {distribution=normal, typical=BASEGI_pop, covariate=SEX, coefficient={0, beta_BASEGI_SEX_2}, sd=omega_BASEGI}
+BASEPD = {distribution=normal, typical=BASEPD_pop, covariate=tECOG, coefficient={0, beta_BASEPD_tECOG_G_1, beta_BASEPD_tECOG_G_2_3}, sd=omega_BASEPD}
+BASEPS = {distribution=normal, typical=BASEPS_pop, covariate={tECOG, SEX}, coefficient={{0, beta_BASEPS_tECOG_G_1, beta_BASEPS_tECOG_G_2_3}, {0, beta_BASEPS_SEX_2}}, sd=omega_BASEPS}
+DIS1 = {distribution=logNormal, typical=DIS1_pop, no-variability}
+DIS10 = {distribution=logNormal, typical=DIS10_pop, no-variability}
+DIS11 = {distribution=logNormal, typical=DIS11_pop, no-variability}
+DIS12 = {distribution=logNormal, typical=DIS12_pop, no-variability}
+DIS14 = {distribution=logNormal, typical=DIS14_pop, no-variability}
+DIS2 = {distribution=logNormal, typical=DIS2_pop, no-variability}
+DIS3 = {distribution=logNormal, typical=DIS3_pop, no-variability}
+DIS4 = {distribution=logNormal, typical=DIS4_pop, no-variability}
+DIS7 = {distribution=logNormal, typical=DIS7_pop, no-variability}
+DIS9 = {distribution=logNormal, typical=DIS9_pop, no-variability}
+Q10th1 = {distribution=normal, typical=Q10th1_pop, no-variability}
+Q10th2 = {distribution=logNormal, typical=Q10th2_pop, no-variability}
+Q10th3 = {distribution=logNormal, typical=Q10th3_pop, no-variability}
+Q11th1 = {distribution=normal, typical=Q11th1_pop, no-variability}
+Q11th2 = {distribution=logNormal, typical=Q11th2_pop, no-variability}
+Q11th3 = {distribution=logNormal, typical=Q11th3_pop, no-variability}
+Q12th1 = {distribution=normal, typical=Q12th1_pop, no-variability}
+Q12th2 = {distribution=logNormal, typical=Q12th2_pop, no-variability}
+Q12th3 = {distribution=logNormal, typical=Q12th3_pop, no-variability}
+Q13th1 = {distribution=normal, typical=Q13th1_pop, no-variability}
+Q13th2 = {distribution=logNormal, typical=Q13th2_pop, no-variability}
+Q13th3 = {distribution=logNormal, typical=Q13th3_pop, no-variability}
+Q14th1 = {distribution=normal, typical=Q14th1_pop, no-variability}
+Q14th2 = {distribution=logNormal, typical=Q14th2_pop, no-variability}
+Q14th3 = {distribution=logNormal, typical=Q14th3_pop, no-variability}
+Q1th1 = {distribution=normal, typical=Q1th1_pop, no-variability}
+Q1th2 = {distribution=logNormal, typical=Q1th2_pop, no-variability}
+Q1th3 = {distribution=logNormal, typical=Q1th3_pop, no-variability}
+Q2th1 = {distribution=normal, typical=Q2th1_pop, no-variability}
+Q2th2 = {distribution=logNormal, typical=Q2th2_pop, no-variability}
+Q2th3 = {distribution=logNormal, typical=Q2th3_pop, no-variability}
+Q3th1 = {distribution=normal, typical=Q3th1_pop, no-variability}
+Q3th2 = {distribution=logNormal, typical=Q3th2_pop, no-variability}
+Q3th3 = {distribution=logNormal, typical=Q3th3_pop, no-variability}
+Q4th1 = {distribution=normal, typical=Q4th1_pop, no-variability}
+Q4th2 = {distribution=logNormal, typical=Q4th2_pop, no-variability}
+Q4th3 = {distribution=logNormal, typical=Q4th3_pop, no-variability}
+Q5th1 = {distribution=normal, typical=Q5th1_pop, no-variability}
+Q5th2 = {distribution=logNormal, typical=Q5th2_pop, no-variability}
+Q5th3 = {distribution=logNormal, typical=Q5th3_pop, no-variability}
+Q6th1 = {distribution=normal, typical=Q6th1_pop, no-variability}
+Q6th2 = {distribution=logNormal, typical=Q6th2_pop, no-variability}
+Q6th3 = {distribution=logNormal, typical=Q6th3_pop, no-variability}
+Q7th1 = {distribution=normal, typical=Q7th1_pop, no-variability}
+Q7th2 = {distribution=logNormal, typical=Q7th2_pop, no-variability}
+Q7th3 = {distribution=logNormal, typical=Q7th3_pop, no-variability}
+Q8th1 = {distribution=normal, typical=Q8th1_pop, no-variability}
+Q8th2 = {distribution=logNormal, typical=Q8th2_pop, no-variability}
+Q8th3 = {distribution=logNormal, typical=Q8th3_pop, no-variability}
+Q9th1 = {distribution=normal, typical=Q9th1_pop, no-variability}
+Q9th2 = {distribution=logNormal, typical=Q9th2_pop, no-variability}
+Q9th3 = {distribution=logNormal, typical=Q9th3_pop, no-variability}
+KDGI = {distribution=logNormal, typical=KDGI_pop, sd=omega_KDGI}
+KDPD = {distribution=logNormal, typical=KDPD_pop, sd=omega_KDPD}
+KDPS = {distribution=logNormal, typical=KDPS_pop, sd=omega_KDPS}
+SLPGI = {distribution=logNormal, typical=SLPGI_pop, sd=omega_SLPGI}
+SLPPD = {distribution=logNormal, typical=SLPPD_pop, sd=omega_SLPPD}
+SLPPS = {distribution=logNormal, typical=SLPPS_pop, sd=omega_SLPPS}
+DIS13 = {distribution=logNormal, typical=DIS13_pop, no-variability}
+DIS5 = {distribution=logNormal, typical=DIS5_pop, no-variability}
+DIS6 = {distribution=logNormal, typical=DIS6_pop, no-variability}
+DIS8 = {distribution=logNormal, typical=DIS8_pop, no-variability}
+EMAXGI = {distribution=logNormal, typical=EMAXGI_pop, sd=omega_EMAXGI}
+EMAXPD = {distribution=logNormal, typical=EMAXPD_pop, sd=omega_EMAXPD}
+EMAXPS = {distribution=logNormal, typical=EMAXPS_pop, sd=omega_EMAXPS}
+
+[LONGITUDINAL]
+file = 'IRT code.txt'
+
+<FIT>
+data = {'1', '10', '11', '12', '13', '14', '2', '3', '4', '5', '6', '7', '8', '9'}
+model = {y1, y10, y11, y12, y13, y14, y2, y3, y4, y5, y6, y7, y8, y9}
+
+<PARAMETER>
+BASEGI_pop = {value=1, method=MLE}
+BASEPD_pop = {value=1, method=MLE}
+BASEPS_pop = {value=1, method=MLE}
+DIS10_pop = {value=0.6, method=FIXED}
+DIS11_pop = {value=0.65, method=FIXED}
+DIS12_pop = {value=0.9, method=FIXED}
+DIS13_pop = {value=1.35, method=FIXED}
+DIS14_pop = {value=1.02, method=FIXED}
+DIS1_pop = {value=1.56, method=FIXED}
+DIS2_pop = {value=2.12, method=FIXED}
+DIS3_pop = {value=1.14, method=FIXED}
+DIS4_pop = {value=1, method=FIXED}
+DIS5_pop = {value=1, method=FIXED}
+DIS6_pop = {value=1, method=FIXED}
+DIS7_pop = {value=4.17, method=FIXED}
+DIS8_pop = {value=4.97, method=FIXED}
+DIS9_pop = {value=1.75, method=FIXED}
+EMAXGI_pop = {value=1, method=MLE}
+EMAXPD_pop = {value=1, method=MLE}
+EMAXPS_pop = {value=1, method=MLE}
+KDGI_pop = {value=1, method=MLE}
+KDPD_pop = {value=1, method=MLE}
+KDPS_pop = {value=1, method=MLE}
+Q10th1_pop = {value=0, method=FIXED}
+Q10th2_pop = {value=2.11, method=FIXED}
+Q10th3_pop = {value=1.69, method=FIXED}
+Q11th1_pop = {value=0, method=FIXED}
+Q11th2_pop = {value=1.94, method=FIXED}
+Q11th3_pop = {value=2.11, method=FIXED}
+Q12th1_pop = {value=-1.46, method=FIXED}
+Q12th2_pop = {value=1.95, method=FIXED}
+Q12th3_pop = {value=1.95, method=FIXED}
+Q13th1_pop = {value=0, method=FIXED}
+Q13th2_pop = {value=1.32, method=FIXED}
+Q13th3_pop = {value=1.87, method=FIXED}
+Q14th1_pop = {value=0, method=FIXED}
+Q14th2_pop = {value=1.88, method=FIXED}
+Q14th3_pop = {value=1.4, method=FIXED}
+Q1th1_pop = {value=0.96, method=FIXED}
+Q1th2_pop = {value=0.99, method=FIXED}
+Q1th3_pop = {value=1.71, method=FIXED}
+Q2th1_pop = {value=0, method=FIXED}
+Q2th2_pop = {value=0.9, method=FIXED}
+Q2th3_pop = {value=1.32, method=FIXED}
+Q3th1_pop = {value=1.51, method=FIXED}
+Q3th2_pop = {value=1.05, method=FIXED}
+Q3th3_pop = {value=1.27, method=FIXED}
+Q4th1_pop = {value=1.12, method=FIXED}
+Q4th2_pop = {value=1.5, method=FIXED}
+Q4th3_pop = {value=1.14, method=FIXED}
+Q5th1_pop = {value=0.41, method=FIXED}
+Q5th2_pop = {value=2.18, method=FIXED}
+Q5th3_pop = {value=3.13, method=FIXED}
+Q6th1_pop = {value=0.49, method=FIXED}
+Q6th2_pop = {value=1.23, method=FIXED}
+Q6th3_pop = {value=1.51, method=FIXED}
+Q7th1_pop = {value=2.68, method=FIXED}
+Q7th2_pop = {value=0.85, method=FIXED}
+Q7th3_pop = {value=0.55, method=FIXED}
+Q8th1_pop = {value=2.25, method=FIXED}
+Q8th2_pop = {value=0.99, method=FIXED}
+Q8th3_pop = {value=1.44, method=FIXED}
+Q9th1_pop = {value=0, method=FIXED}
+Q9th2_pop = {value=1.98, method=FIXED}
+Q9th3_pop = {value=0.6899999999999999, method=FIXED}
+SLPGI_pop = {value=1, method=MLE}
+SLPPD_pop = {value=1, method=MLE}
+SLPPS_pop = {value=1, method=MLE}
+beta_BASEGI_SEX_2 = {value=0, method=MLE}
+beta_BASEPD_tECOG_G_1 = {value=0, method=MLE}
+beta_BASEPD_tECOG_G_2_3 = {value=0, method=MLE}
+beta_BASEPS_SEX_2 = {value=0, method=MLE}
+beta_BASEPS_tECOG_G_1 = {value=0, method=MLE}
+beta_BASEPS_tECOG_G_2_3 = {value=0, method=MLE}
+omega_BASEGI = {value=1, method=MLE}
+omega_BASEPD = {value=1, method=MLE}
+omega_BASEPS = {value=1, method=MLE}
+omega_EMAXGI = {value=1, method=MLE}
+omega_EMAXPD = {value=1, method=MLE}
+omega_EMAXPS = {value=1, method=MLE}
+omega_KDGI = {value=1, method=MLE}
+omega_KDPD = {value=1, method=MLE}
+omega_KDPS = {value=1, method=MLE}
+omega_SLPGI = {value=1, method=MLE}
+omega_SLPPD = {value=1, method=MLE}
+omega_SLPPS = {value=1, method=MLE}
+
+<MONOLIX>
+
+[TASKS]
+populationParameters()
+individualParameters(method = {conditionalMean, conditionalMode })
+fim(method = StochasticApproximation)
+logLikelihood(method = ImportanceSampling)
+
+[PLOTS]
+run = true
+plots = {indfits = {selected = true}, parameterdistribution = {selected = true}, obspred = {selected = true}, covariancemodeldiagnosis = {selected = true}, covariatemodeldiagnosis = {selected = true}, vpc = {selected = true}, residualsscatter = {selected = true}, residualsdistribution = {selected = true}, randomeffects = {selected = true}, saemresults = {selected = true}}
+
+[SETTINGS]
+GLOBAL:
+exportpath = 'IRT model'
+nbsimulations = 200
+
+POPULATION:
+burniniterations = 50
+
+LL:
+fixedsimulations = 3000
+
+FIM:
+miniterations = 20
+maxiterations = 80
+

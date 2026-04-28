@@ -1,0 +1,101 @@
+<DATAFILE>
+
+[FILEINFO]
+file={path='synthesis_PROtotal.csv'}
+delimiter = comma
+header={ID, TIME, SCORE, AGE, SEX, ECOG, ETHNICITY, RACE, CANCERTYPE, IV, PO}
+
+[CONTENT]
+ID = {use=identifier}
+TIME = {use=time}
+SCORE = {use=observation, type=discrete}
+AGE = {use=covariate, type=continuous}
+SEX = {use=covariate, type=categorical}
+ECOG = {use=covariate, type=categorical}
+ETHNICITY = {use=covariate, type=categorical}
+RACE = {use=covariate, type=categorical}
+CANCERTYPE = {use=covariate, type=categorical}
+IV = {use=covariate, type=categorical}
+PO = {use=covariate, type=categorical}
+
+<MODEL>
+
+[COVARIATE]
+input = {AGE, ECOG, SEX, CANCERTYPE, ETHNICITY, IV, PO, RACE}
+
+ECOG = {type=categorical, categories={'0', '1', '2', '3'}}
+SEX = {type=categorical, categories={'1', '2'}}
+CANCERTYPE = {type=categorical, categories={'0', '1'}}
+ETHNICITY = {type=categorical, categories={'0', '1'}}
+IV = {type=categorical, categories={'0', '1'}}
+PO = {type=categorical, categories={'0', '1'}}
+RACE = {type=categorical, categories={'0', '1'}}
+
+DEFINITION:
+ECOG2 =
+{
+  transform = ECOG, 
+  categories = {
+  'G_0' = {'0'},
+  'G_1' = {'1'},
+  'G_2_3' = {'2', '3'}  }, 
+  reference = 'G_0'
+}
+
+[INDIVIDUAL]
+input = {BASEP_pop, omega_BASEP, Emax_pop, omega_Emax, Kd_pop, omega_Kd, SLP_pop, omega_SLP, gamma0_pop, gamma1_pop, tau_pop, SEX, beta_BASEP_SEX_2, ECOG2, beta_BASEP_ECOG2_G_1, beta_BASEP_ECOG2_G_2_3}
+
+SEX = {type=categorical, categories={'1', '2'}}
+ECOG2 = {type=categorical, categories={'G_0', 'G_1', 'G_2_3'}}
+
+DEFINITION:
+BASEP = {distribution=normal, typical=BASEP_pop, covariate={SEX, ECOG2}, coefficient={{0, beta_BASEP_SEX_2}, {0, beta_BASEP_ECOG2_G_1, beta_BASEP_ECOG2_G_2_3}}, sd=omega_BASEP}
+Emax = {distribution=normal, typical=Emax_pop, sd=omega_Emax}
+Kd = {distribution=logNormal, typical=Kd_pop, sd=omega_Kd}
+SLP = {distribution=normal, typical=SLP_pop, sd=omega_SLP}
+gamma0 = {distribution=logNormal, typical=gamma0_pop, no-variability}
+gamma1 = {distribution=logNormal, typical=gamma1_pop, no-variability}
+tau = {distribution=logNormal, typical=tau_pop, no-variability}
+
+[LONGITUDINAL]
+file = 'PRO total code.txt'
+
+<FIT>
+data = 'SCORE'
+model = PRO_score
+
+<PARAMETER>
+BASEP_pop = {value=-1, method=MLE}
+Emax_pop = {value=0.2, method=MLE}
+Kd_pop = {value=0.03, method=MLE}
+SLP_pop = {value=0.1, method=MLE}
+beta_BASEP_ECOG2_G_1 = {value=0, method=MLE}
+beta_BASEP_ECOG2_G_2_3 = {value=0, method=MLE}
+beta_BASEP_SEX_2 = {value=0, method=MLE}
+gamma0_pop = {value=20, method=MLE}
+gamma1_pop = {value=6, method=MLE}
+omega_BASEP = {value=1, method=MLE}
+omega_Emax = {value=1, method=MLE}
+omega_Kd = {value=1, method=MLE}
+omega_SLP = {value=1, method=MLE}
+tau_pop = {value=50, method=MLE}
+
+<MONOLIX>
+
+[TASKS]
+populationParameters()
+individualParameters(method = {conditionalMean, conditionalMode })
+fim(method = StochasticApproximation)
+logLikelihood(method = ImportanceSampling)
+
+[PLOTS]
+run = true
+plots = {indfits = {selected = true}, parameterdistribution = {selected = true}, obspred = {selected = true}, covariancemodeldiagnosis = {selected = true}, covariatemodeldiagnosis = {selected = true}, vpc = {selected = true}, residualsscatter = {selected = true}, residualsdistribution = {selected = true}, randomeffects = {selected = true}, saemresults = {selected = true}}
+
+[SETTINGS]
+GLOBAL:
+exportpath = 'PRO total model'
+
+FIM:
+maxiterations = 150
+

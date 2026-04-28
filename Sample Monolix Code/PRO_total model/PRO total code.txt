@@ -1,0 +1,47 @@
+DESCRIPTION:
+Use beta-regression to transform PRO scores (0-56)
+PRO toxicity and progression
+
+ID : unique patient identifier 
+TIME : time in days 
+SCORE: Total PRO score as model input (sum up 14 symptoms PRO score)
+SEX: 1:Male; 2:Female
+ECOG: clinician reported ECOG (0,1,2,3)
+Other covariates (ETHNICITY, RACE, CANCERTYPE, IV, PO) for reference only and are not in the final model
+
+[LONGITUDINAL]
+input = {BASEP, Emax, Kd, SLP, tau, gamma0, gamma1}
+
+EQUATION:
+PRO = BASEP + SLP*0.001*t - Emax*(1-exp(-Kd*t))
+
+; Beta-regression
+maxValue = 56
+
+mu = exp(PRO)/(1+exp(PRO))
+mupred = mu*maxValue
+
+lp0 = -gamma0-gamma1*log(mu/(1-mu))
+lp1 = -gamma0+gamma1*log(mu/(1-mu))
+p0 = exp(lp0)/(1+exp(lp0))
+p1 = exp(lp1)/(1+exp(lp1))
+p2 = 1 - p0 - p1
+PROipred = (p1*1 + p2*mu)*maxValue
+
+DEFINITION:
+
+PRO_score = {type=count, 
+if yij==0
+   pk = p0
+elseif yij==maxValue
+   pk = p1
+else
+   pk = (1-p0-p1) * exp(gammaln(tau)-gammaln(mu*tau)-gammaln((1-mu)*tau) + (mu*tau-1)*log(yij/maxValue) + ((1-mu)*tau-1)*log(1-yij/maxValue) - log(maxValue))
+end
+P(PRO_score=yij)= pk }
+
+OUTPUT:
+output = {PRO_score}
+table = {p0, p1, p2, mu, mupred, PROipred}
+
+
